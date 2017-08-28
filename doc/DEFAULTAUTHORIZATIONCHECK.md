@@ -14,10 +14,10 @@ The default algorithm will check if user sending message is on some keys in the 
 The possible configurations that controls permissions is:
 
 	
-	- The COMMANDS/<CommandName>/AUTHORIZED_USERS Key
+	- The HANDLERS/<CommandName>/AUTHORIZED_USER Key
 		This is a array contains each username that can run a command.
 		
-	- The COMMANDS/<CommandName>/DENIED_USERS Key
+	- The HANDLERS/<CommandName>/DENIED_USERS Key
 		This is a array tht contains user that cannot run the commnad.
 		
 ## Configuration priority
@@ -26,12 +26,8 @@ Because same user can be granted or denied to a same command in different levels
 The list bellow details configurations priorities. The high priority override lower. 
 The priorities as assigned in order that appears (first is highgest priori):
 
-	COMMANDS/<CommandName>/DENIED_USERS
 	HANDLERS/<CommandName>/DENIED_USERS
-	USERS/<UserName>/DENIED_COMMANDS
-	COMMANDS/<CommandName>/AUTHORIZED_USERS
 	HANDLERS/<CommandName>/AUTHORIZED_USERS
-	USERS/<UserName>/AUTHORIZED_COMMANDS
 
 		
 

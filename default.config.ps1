@@ -1,15 +1,16 @@
 <# 
-
-Default configuration file.
-Use this file for check for all possible configurations
-Note for handlers writes: Places configurations of your handlers in a separte key in format, "HANDLERNAME"  
-
+	Default configuration file.
+	Use this file for check for all possible configurations
+	Note for handlers writes: Places configurations of your handlers in a separte key in format, "HANDLERNAME"  
 #>
 
 @{
 	
 	#This contains global options for the bot!
 	GLOBAL = @{
+
+		#The bot token to be used! If not bot token is passed in -Token of Start-CmdBot cmdlet, it will try use this.
+		BOT_TOKEN = $null;
 		
 		#Options that can be changed at runtime!
 		RUNTIME_OPTIONS = @{
@@ -25,6 +26,7 @@ Note for handlers writes: Places configurations of your handlers in a separte ke
 			MAX_FAILURES = 2
 			
 			#Chat id to which send message if bot will exit!
+			#Can be any valid chat_id acceptable by telegram api (numbers or chanell @channelname)
 			NOTIFICATION_CHATID = $null
 		}
 		
@@ -56,7 +58,8 @@ Note for handlers writes: Places configurations of your handlers in a separte ke
 		}
 		
 		
-		#Options to commands system behavior
+		#This key define behavior of the engine of PSCMdBot relative to the commands.
+		#Specific commands functionalities are place in the handlers specific configuration.
 		COMMANDS_SETTINGS = @{
 			#Ignore unrecognized commands (not repy will be send)
 			#This is useful if many bots are in a group and you want
@@ -64,61 +67,61 @@ Note for handlers writes: Places configurations of your handlers in a separte ke
 			IGNORE_UNRECOGNIZED = $false
 		}
 
+		#Security options!
+		SECURITY = @{
+			#Controls chat_id where the bot can process thirdy party handlers!
+			USERHANDLERS_CHATS = $null
+
+			#Controls which chats bot can process internals handlers!
+			SYSTEMHANDLERS_CHATS = '*'
+		}
+
 
 		
 	}
 
-	#Settings for specific commands
-	#Put the command name and the settings!
-	#Any comand can have a "AUTHORIZED_USERS" keys. 
-	COMMANDS = @{
 
-
-	
-		'botping' = @{
-			AUTHORIZED_USERS = '*';
-		}
-	
-		listcmds = @{
-			AUTHORIZED_USERS = '*';
-		}
-		
-		#Settings for ps command (commad separated)
-		'chatinfo' = @{
-			AUTHORIZED_USERS = '*';
-		}
-	
-		#Settings for ps command (commad separated)
-		'ps' = @{
-			AUTHORIZED_USERS = @()
-		}
-		
-
-		
-	}
-	
-
-	#For HANDLERS 
+	#This is reserverd configuration for each handler.
+	#Handler writes will define own configuration options and read this key from user config file.
+	#Check handler documentation for appropriate help about options.
+	#Bellow, some options used by engine
 	HANDLERS = @{
-		HANDLE_NAME = @{
-			#Sets a priority of the handler!
+		#AUXCMDS is internal handler that provides basic commands for the bot.
+		#Is is auxiliary only, and shipped with PsCmdBot.
+		#Also, it is a example of options!
+		AUXCMDS = @{
+			#Priority of the handlers.
+			#The higher value, most priority the handler will have
+			#If two handlers can handle same command name, this priority will determine most priori.
+			#If two or more have equal priority, the choosed handler is random.
 			PRIORITY = 0
-		}
-	}
-	
 
-	#Configuration about users!
-	USERS = @{
-		
-		
-		<# LAYOUT
-				#Commands that user can run.
-				AUTHORIZED_COMMANDS = @();
+
+			#This key controls the commands of the handler! 
+			#Each subkey is a command name!
+			#The AUTHORIZED_KEYS is part of DEFAULT AUTHORIZATION CHECK ALGORORITHM. Check doc/DEFAULTAUTHORIZATIONCHECK.md for more details.
+			#A special key, '*', can be defined, meaning default option for every command in this handler!
+			COMMANDS = @{
+				'*' = @{
+					AUTHORIZED_USERS = $null
+				}
+
+				botping = @{
+					AUTHORIZED_USERS = '*';
+				}
+			
+				listcmds = @{
+					AUTHORIZED_USERS = '*';
+				}
 				
-				#Commands that user cannot run.
-				DENIED_COMMANDS = @();
+				chatinfo = @{
+					AUTHORIZED_USERS = '*';
+				}
 			}
-		#>
+
+
+		}
+
 	}
 	
 	
