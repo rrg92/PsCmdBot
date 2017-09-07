@@ -72,6 +72,10 @@
 			#Controls chat_id where the bot can process thirdy party handlers!
 			USERHANDLERS_CHATS = $null
 
+			#This must be used for debugging purposes only. Dont enable in production.
+			#if enabled, the chat securitu check will be disabled!
+			DISABLE_CHATID_CHECK = $false
+
 			#Controls which chats bot can process internals handlers!
 			SYSTEMHANDLERS_CHATS = '*'
 		}
