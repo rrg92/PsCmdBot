@@ -121,6 +121,10 @@
 				chatinfo = @{
 					AUTHORIZED_USERS = '*';
 				}
+
+				dcptest = @{
+					AUTHORIZED_USERS = '*';
+				}
 			}
 
 
