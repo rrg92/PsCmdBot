@@ -10,7 +10,6 @@
 
 * Instances
 	* Allow same code to be reused to different instances (e.g different bot token)
-	
 
 * Storage
 	* Add support for persistent storage to allow data to be shared between executions
@@ -25,8 +24,8 @@
 	* Handler hot add and upgrades
 	* Add zabbix handler example
 
-* Concept of "Service"
-	Allow just some function of core to be used in another scopes (like hanlders)
-	This is useful toprevent handles unstable the engine
+* Add eventing
+	* OnLoader
 
-* Default Command Parse
+
+* Add support for in memory configuration change!

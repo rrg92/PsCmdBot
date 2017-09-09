@@ -95,6 +95,13 @@
 	}
 	
 	
+	#The handler default config
+	#This is default configuration for the handler!
+	#You can setup options here that will be set when handles load.
+	#This options will be set on CURRENT_CONFIG.HANDLERS[HANDLER_NAME]
+	CONFIG = @{
+
+	}
 	
 	
 	#RUNTIME PROPERTIES AND MEHTODS #################################################
@@ -155,6 +162,8 @@
 	unlisten = {param($Message)}
 	
 	
+	#Returns the current effective configuration of the handler!
+	getMyConfig = {}
 
 	
 }
