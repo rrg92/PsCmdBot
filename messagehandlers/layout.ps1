@@ -93,6 +93,11 @@
 	ON_CONFIG_CHANGE = {
 	
 	}
+
+	#Actions to be executed in initialization. Will be called when handlers is loaded. It is useful to load dependencies, etc!
+	ON_LOAD = {
+		
+	}
 	
 	
 	#The handler default config
@@ -102,6 +107,8 @@
 	CONFIG = @{
 
 	}
+
+
 	
 	
 	#RUNTIME PROPERTIES AND MEHTODS #################################################

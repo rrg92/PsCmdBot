@@ -348,7 +348,7 @@ $ErrorActionPreference= "Stop";
 	#Converts a hashtable into a textual representation strings. Each key is returned a string like KEYNAME = VALUE
 	#If the key a another hash, then it will be represented as "PARENTKEYNAME" + $SEPARATOR + "KEYNAME" = VALUE, and so on.
 	Function PsCmdBot_Hash2String {
-		param($Hash, $Separator='.', $ParentKey=$null, $KeyList = $null)
+		param($Hash, $Separator='.', $ParentKey=$null, $KeyList = $null, $SensitiveList = @())
 
 		$Results = @();
 
@@ -365,7 +365,7 @@ $ErrorActionPreference= "Stop";
 
 
 			if($Value -is [hashtable]){
-				$Rep =  PsCmdBot_Hash2String -Hash $Value -Separator $Separator -ParentKey $FullName -KeyList $KeyList
+				$Rep =  PsCmdBot_Hash2String -Hash $Value -Separator $Separator -ParentKey $FullName -KeyList $KeyList -SensitiveList $SensitiveList
 			} else {
 				if($KeyList){
 					if(-not ($KeyList|?{ $FullName -like $_ -or $FullName+$Separator -like $_ }) ){
@@ -373,7 +373,14 @@ $ErrorActionPreference= "Stop";
 					}
 				}
 
-				$Rep += $FullName +' = '+ $Value;
+				$ValuePart = ' = '+ $Value
+				if($SensitiveList){
+					if(($SensitiveList|?{ $FullName -like $_ -or $FullName+$Separator -like $_ }) ){
+						$ValuePart = ' = ' + '*' * 3;
+					}
+				}
+
+				$Rep += $FullName + $ValuePart;
 			}
 				
 			if($Rep){
@@ -384,6 +391,49 @@ $ErrorActionPreference= "Stop";
 		return $Results;
 	}
 	
+	#Mask keys with sensitive content. Return the new hashtable with masked content
+	Function PsCmdBot_HashSensitiveMask {
+		param($Hash, $Separator='.', $ParentKey=$null, $SensitiveList = @(), [switch]$RegExp = $false)
+
+		$NewHash = $Hash.psobject.copy();
+
+		$RegExParam = @{RegExp=$RegExp};
+		if($RegExp){
+			$ScriptMatch = { $FullName -match $_ -or $FullName+$Separator -match $_ }
+		} else {
+			$ScriptMatch = { $FullName -like $_ -or $FullName+$Separator -like $_ }
+		}
+
+
+		@($NewHash.Keys) | %{
+			$KeyName	=$_;
+			$Value 		= $NewHash[$_];
+
+			if($ParentKey){
+				$FullName = $ParentKey+$Separator+$KeyName
+			} else {
+				$FullName = $KeyName;
+			}
+
+
+			if($Value -is [hashtable]){
+
+				$Value =  PsCmdBot_HashSensitiveMask -Hash $Value -Separator $Separator -ParentKey $FullName -SensitiveList $SensitiveList @RegExParam;
+			} else {
+				if($SensitiveList){
+					if(($SensitiveList|? $ScriptMatch) ){
+						$Value = "****";
+					}
+				}
+
+			}
+				
+			$NewHash[$_] = $Value;
+		}
+
+		return $NewHash;
+	}
+
 	#Convert a PsCustomOject to hashtable!!!
 	Function PSCmdBot_Object2HashString {
 		param($Objects, [switch]$Expand = $false, [switch]$PureHashTables = $false, $MaxDepths = 100, $CurrDepth = 0, $Processed = @(), $ExcludeProp = @())
@@ -1869,9 +1919,11 @@ $ErrorActionPreference= "Stop";
 			$CurrentConfig = PsCmdBot_CM_MergeConfig -Config1 $DefaultConfig -Config2 $SourceConfig;
 
 
-			PsCmdBot_Log "	Current expanded config: $(PsCmdBot_Object2HashString $CurrentConfig -Expand)" "DEBUG"
+			$CurrentConfigMasked = PsCmdBot_HashSensitiveMask -Hash $CurrentConfig -SensitiveList $CurrentConfig.GLOBAL.ADMIN.SENSITIVE_CONFIG_KEYS
+			PsCmdBot_Log "	Current expanded config: $(PsCmdBot_Object2HashString $CurrentConfigMasked -Expand)" "DEBUG"
 
-			PsCmdBot_Log "	Last config: $(PsCmdBot_Object2HashString $ConfigStor.EFFECTIVE -Expand)" "DEBUG"
+			$EffectiveMasked = PsCmdBot_HashSensitiveMask -Hash $ConfigStor.EFFECTIVE -SensitiveList $CurrentConfig.GLOBAL.ADMIN.SENSITIVE_CONFIG_KEYS
+			PsCmdBot_Log "	Last config: $(PsCmdBot_Object2HashString $EffectiveMasked -Expand)" "DEBUG"
 
 			#Generate only the change keys!
 			$ChangedConfig = PsCmdBot_HashDiff -Table1 $ConfigStor.EFFECTIVE -Table2 $CurrentConfig -RemovedDefault $DefaultConfig;
@@ -1880,8 +1932,8 @@ $ErrorActionPreference= "Stop";
 		}
 					
 		if(!$FirstTime -and $ChangedConfig.count -gt 0){
-			
-			PSCmdBot_Log "	Configuration changed: $(PsCmdBot_Object2HashString $ChangedConfig -Expand)"
+			$ChangedMasked = PsCmdBot_HashSensitiveMask -Hash $ChangedConfig -SensitiveList $CurrentConfig.GLOBAL.ADMIN.SENSITIVE_CONFIG_KEYS
+			PSCmdBot_Log "	Configuration changed: $(PsCmdBot_Object2HashString $ChangedMasked -Expand)"
 		}
 
 
@@ -1924,6 +1976,8 @@ $ErrorActionPreference= "Stop";
 		}
 		
 	}
+
+	
 
 
 

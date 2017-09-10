@@ -1,6 +1,6 @@
 # BUGS
 
-
+	- HashDiff comparison in values with array if getting incorrect! Comparison must also check each array value!
 
 
 # ENCHACEMENTS
@@ -28,6 +28,9 @@
 	* OnLoader
 
 
-* Add support for runtime configuration change!
+* Add support for add and remove configurtion
 
 * Print configuration command
+
+
+* Hide sensitive information in configurations

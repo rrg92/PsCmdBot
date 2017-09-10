@@ -85,6 +85,11 @@
 		#This configurations cannot be changed by runtime!
 		ADMIN = @{
 			SUPER_ADMINS = @()
+
+			#Keys which your value will not be show when dumping configuration with getcfg
+			SENSITIVE_CONFIG_KEYS = @(
+				'*PASSWORD*'
+			)
 		}
 		
 	}
