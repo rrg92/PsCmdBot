@@ -28,4 +28,6 @@
 	* OnLoader
 
 
-* Add support for in memory configuration change!
+* Add support for runtime configuration change!
+
+* Print configuration command

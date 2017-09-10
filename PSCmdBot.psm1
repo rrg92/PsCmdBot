@@ -46,7 +46,7 @@ $ErrorActionPreference= "Stop";
 		
 		
 		$AllExceptions | %{
-			if($ex -is [System.Exception]){
+			if($_ -is [System.Exception]){
 				$ex = $_;
 			} else {
 				$ex = $_.Exception;
@@ -268,6 +268,7 @@ $ErrorActionPreference= "Stop";
 		@($Table1.Keys) | %{
 			$CurrKey = $_;
 			$CurrValue1 = $Table1[$CurrKey];
+
 			
 			#If Table2 contains the key1...
 			if($Table2.Contains($CurrKey)){
@@ -323,7 +324,7 @@ $ErrorActionPreference= "Stop";
 				}
 				
 			
-			
+
 				#TODO: THE NULL ARRAY PROBLEM
 				if($V1 -ne $V2){
 					$Diff.add($CurrKey, $CurrValue2);
@@ -343,6 +344,45 @@ $ErrorActionPreference= "Stop";
 		return $Diff;
 	}	
 	
+
+	#Converts a hashtable into a textual representation strings. Each key is returned a string like KEYNAME = VALUE
+	#If the key a another hash, then it will be represented as "PARENTKEYNAME" + $SEPARATOR + "KEYNAME" = VALUE, and so on.
+	Function PsCmdBot_Hash2String {
+		param($Hash, $Separator='.', $ParentKey=$null, $KeyList = $null)
+
+		$Results = @();
+
+		$Hash.GetEnumerator() | %{
+			$KeyName	= $_.Key;
+			$Value 		= $_.Value;
+			$Rep		= "";
+
+			if($ParentKey){
+				$FullName = $ParentKey+$Separator+$KeyName
+			} else {
+				$FullName = $KeyName;
+			}
+
+
+			if($Value -is [hashtable]){
+				$Rep =  PsCmdBot_Hash2String -Hash $Value -Separator $Separator -ParentKey $FullName -KeyList $KeyList
+			} else {
+				if($KeyList){
+					if(-not ($KeyList|?{ $FullName -like $_ -or $FullName+$Separator -like $_ }) ){
+						return;
+					}
+				}
+
+				$Rep += $FullName +' = '+ $Value;
+			}
+				
+			if($Rep){
+				$Results += $Rep;
+			}
+		}
+
+		return $Results;
+	}
 	
 	#Convert a PsCustomOject to hashtable!!!
 	Function PSCmdBot_Object2HashString {
@@ -1106,6 +1146,7 @@ $ErrorActionPreference= "Stop";
 			DEFAULT		= @{}		#defautl configuration
 			USER		= @{
 					LAST_FILE_MODIFIED = [datetime]'1900-01-01'
+					CONFIG = @{}
 				}
 			CHANGE_SUBSCRIBERS = @()
 			EXPANDABLE_DIR_KEYS = @(
@@ -1120,6 +1161,9 @@ $ErrorActionPreference= "Stop";
 				'[^_]+_PATH'
 			)
 			
+			#Runtime changed configuration!
+			RUNTIME = @{}
+
 			FIRST_USERCONFIG_CHECK = $false
 		}
 		
@@ -1373,7 +1417,7 @@ $ErrorActionPreference= "Stop";
 	
 	
 	
-# DEFAULT COMMAND PARSING
+# DEFAULT COMMAND PARSER
 	#The pscmdbot provide a default command parsing (called DCP in functions)
 	#This helps new msg handlers easily implements new commands without worry about syntax, parsing, etc.
 	#The parsed syntax is:
@@ -1428,12 +1472,16 @@ $ErrorActionPreference= "Stop";
 		$LastSeparatorPart=-1; #Will store the position of last param separator.
 		$ParamValue=@() #Here will store current parameter values!
 		$CurrentParam=""; #Here will store current parameter name.
+		[object]$TmpValue-""; #Temporary stores a object of a speific type other than string.
+		$TempArrayValues=@(); #Temporary array that will store cluster values arrayis
+		$inArrayMode = $false; #Indicates that values separator was specified and values get assigned to same arrya in last position
 
 		$Stop = $false;
 		
 		$parts | where-object {!$Result.Error -and !$Stop} | foreach-object {
 			$i++;
-		
+			$TmpValue = $_;
+
 			#Part 0 alwys must be command name!
 			if($i -eq 0){
 				$CommandName = $_ -replace '^/','';	
@@ -1457,19 +1505,18 @@ $ErrorActionPreference= "Stop";
 				#Also, we must initialize buffers to avoid previous value be used with next string!
 				if($_ -eq $DCP_SEPARATOR_STRING){
 					$InString = $false;
-					$ParamValue += $StrBuff;
+					$TmpValue = $StrBuff;
 					$StrBuff="";
 				} else {
 					#Just append current part to the buffer!
 					$StrBuff += $_;
+					return;
 				}
 				
-				return;
+				
 			}
-		
-		
 			#If current part is the parameter separator, then we must assign all values to parameter slot, if aaplicable and reset parameter names and values vars...
-			if($_ -match "$DCP_SEPARATOR_PARAMETER+"){
+			elseif($_ -match "$DCP_SEPARATOR_PARAMETER+"){
 				$LastSeparatorPart = $i;
 				#Part 1 is the CommandName. Because this, we just need make somehting if we are higher the part 2...
 				if($i -ge 2){
@@ -1480,18 +1527,18 @@ $ErrorActionPreference= "Stop";
 		
 				#Now, its time to initaliza vars!
 				$CurrentParam="";
-				$ParamValue = @();
+				$ParamValue=@();
+				$inArrayMode=$false;
 				return;
 			}
-			
 			#If part is parameter value separator, then the previous part was a parameter name. Because previous part was stored in ParamValue var, we just get it!
 			#Because previous part was a parameter name, we must reset paramvalue var.
-			if($_ -eq $DCP_SEPARATOR_PARAMVALUE){
+			elseif($_ -eq $DCP_SEPARATOR_PARAMVALUE){
 		
 				#Here, we must gurantee that $ParamValue have just one item.
 				#If more, means that a values separator was used in parameter part.
 				#This is a error!
-				if($ParamValue.count -gt 1){
+				if($inArrayMode){
 						#Build error!
 		
 						#($LastSeparatorPart+1)
@@ -1514,33 +1561,66 @@ $ErrorActionPreference= "Stop";
 				}
 		
 				$ParamValue = @();
+				$inArrayMode=$false;
 				return;
 			}
-		
 			#If current part is string separator, at this point of code, we not inside a delimiter.
 			#THen, this marks a starting string delimiter!
-			if($_ -eq $DCP_SEPARATOR_STRING){
+			elseif($_ -eq $DCP_SEPARATOR_STRING){
 				$InString = $true;
 				$LastOpenStringPart = $i; #Record the part number where we open the string for reports!
 				return;
 			}
-		
 			#If current part is the values separator we just passes to next!
-			if($_ -eq $DCP_SEPARATOR_VALUES){
+			elseif($_ -eq $DCP_SEPARATOR_VALUES){
+				#Creates a new slot on param values!				
+				$inArrayMode = $true;
 				return;
 			}
-		
 			#Because the way we split the parts, some parts will a empty string. Ex.: :" (param separator followed by string separator. ITs like 1,,2 )
 			#We just ingore it!
-			if($_.length -eq 0){
+			elseif($_.length -eq 0){
 				return;
 			}
-		
-			#At this point, we just reading a arbitrary value. By default, it is treated a parameter value!
-			#If it was a parameter name, then, will access this array to get it!
-			$ParamValue += $_;
+			#if the values is a string containing a boolean value...
+			elseif( "TRUE","FALSE" -Contains $_.toUpper() ){
+				switch($_.ToUpper()){
+					"TRUE" {
+						$TmpValue = $true;
+					}
+
+					"FALSE" {
+						$TmpValue  = $false;
+					}
+				}
+			}
+			#If have dots, check if value can be converted to decimal!
+			elseif( $_ -like "*.*" ){
+				$TmpValue = $_ -as [decimal]
+				if(!$TmpValue){
+					$TmpValue = $_;
+				}
+			}
+			else {
+				#If is a number, convert uses number!
+				$TmpValue = $_ -as [int]
+				if(!$TmpValue){
+					$TmpValue = $_;
+				}
+			}
+
+			#If in array mode, get eachs value and put in the last array position!
+			if( $inArrayMode ){
+				$ParamValue[-1] = @($ParamValue[-1]) + @($TmpValue);
+				return;
+			} else {
+				#Concatenates de raw string value!
+				$ParamValue += $TmpValue;
+			}
+
 		}
 		
+
 		#If arrive at this point and inString open, a error exist!
 		if(  $InString ){
 		
@@ -1553,6 +1633,7 @@ $ErrorActionPreference= "Stop";
 			) -Join "`r`n";
 		}
 
+	
 
 		return $Result;
 		
@@ -1633,6 +1714,70 @@ $ErrorActionPreference= "Stop";
 		}
 	}
 
+	Function PsCmdBot_CM_GetRuntimeConfig {
+		$Stor = PsCmdBot_Stor_GetStorage;
+		return $Stor.CONFIGURATION.RUNTIME;
+	}
+
+	Function PsCmdBot_CM_ModifyConfigRuntime {
+		param($ConfigPath, $Value, [switch]$Unset)
+
+		$CurrentRuntime	= PsCmdBot_CM_GetRuntimeConfig;
+
+		if($ConfigPath -like "GLOBAL.ADMIN.*"){
+			$ex = PSCmdBot_GetNewException -ID 'INVALID_GLOBAL_ADMIN_OPTION_CHANGE' -Msg "Cannot change a GLOBAL.ADMIN.* option!"
+			PsCmdBot_Log "ATTENTION: Someone tried change global admin option!" "PROGRESS"
+			throw $Ex;
+		}
+
+		#Splits each part...
+		$Parts = $ConfigPath -split "\.";
+
+		#Build the path!
+		if($Parts.count -gt 1){
+			$Limit = $Parts.count - 2;
+
+			$i = 0;
+			while($i -le $Limit){
+				$PartName 	= $Parts[$i];
+				$PartExists = $CurrentRuntime.Contains($PartName)
+
+				#If the part not exists, then, no more check are necessary!
+				if(!$PartExists -and $Unset){
+					$CurrentRuntime = $null;
+					break;
+				}
+
+				if(!$PartExists){
+					$CurrentRuntime.add($PartName, @{});
+				}
+
+				$CurrentRuntime = $CurrentRuntime[$PartName];
+				$i++;
+			}
+
+
+		}
+
+		$LastPart = $Parts[-1];
+
+		if($Unset -and $CurrentRuntime -ne $null){
+			if($CurrentRuntime.Contains($LastPart)){
+				$CurrentRuntime.remove($LastPart);
+			}
+		}
+
+		if(!$Unset){
+			$CurrentRuntime[$LastPart] = @($Value);
+		}
+
+		PsCmdBot_Log "	Runtime configuration changed. Path:$ConfigPath Unset:$Unset" "DETAILED";
+
+		#Merging into!
+		PSCmdBot_CM_UpdateConfig -Runtime;
+	}
+
+
 	Function PsCmdBot_CM_GetHandlersDefaultConfig {
 		PsCmdBot_Log "Loading default handlers config" "DETAILED";
 		$Stor = PsCmdBot_Stor_GetStorage;
@@ -1651,13 +1796,14 @@ $ErrorActionPreference= "Stop";
 	}
 	
 	Function PSCmdBot_CM_UpdateConfig {
-		param([switch]$FirstTime = $false)
+		param([switch]$FirstTime = $false, [switch]$Runtime)
 	
 		$Stor = PsCmdBot_Stor_GetStorage;
 		$ConfigStor = $Stor.CONFIGURATION;
 		
 		PSCmdBot_Log_SetDefaultLevel "DETAILED";
 		$DefaultConfig	= PsCmdBot_CM_GetDefaultConfig;
+		$ConfigStor.DEFAULT = $DefaultConfig;
 		#Expands the default!
 		PsCmdBot_ExpandDirs -BasePath (PsCmdBot_GetWorkingDirectory) -Table $DefaultConfig -KeyNames $ConfigStor.EXPANDABLE_DIR_KEYS
 
@@ -1667,7 +1813,6 @@ $ErrorActionPreference= "Stop";
 
 		
 		if($FirstTime){
-			
 			#Expands the handlers default, and merges into the default!
 			$HandlersDefaultConfig 		= PsCmdBot_CM_GetHandlersDefaultConfig;
 			PsCmdBot_ExpandDirs -BasePath (PsCmdBot_GetWorkingDirectory) -Table $HandlersDefaultConfig -KeyNames $ConfigStor.EXPANDABLE_DIR_KEYS
@@ -1679,34 +1824,59 @@ $ErrorActionPreference= "Stop";
 			$ChangedConfig = $DefaultConfig.psobject.copy();
 			PSCmdBot_Log "First time configuration load!"
 		} else {
+			#Have updates?
 			$UserConfig 	= PsCmdBot_CM_GetUserConfig;
+			$Reasons		= @()
 			
-			if($UserConfig){
-				PSCmdBot_Log "User configuration file modified. Reloading"
-			} else {
-				return $null;
+			if($Runtime){
+				$Reasons += "RUNTIME"
 			}
-			
+
+			if($UserConfig){
+				$Reasons += "USERCONFIG"
+			}
+
+			if(!$Reasons){
+				return;
+			}
+
+			PSCmdBot_Log "	Configuration was changed. Reloading. Reasons: $Reasons" "DETAILED"
+
+			#Gets the RunTime!
+			$RuntimeConfig = PsCmdBot_CM_GetRuntimeConfig;
+			#Expands!
+			PsCmdBot_ExpandDirs -BasePath (PsCmdBot_GetWorkingDirectory) -Table $RuntimeConfig -KeyNames $ConfigStor.EXPANDABLE_DIR_KEYS;
+
+
+			#User config check!
+			if($UserConfig){
+				#Expanding!
+				PsCmdBot_ExpandDirs -BasePath (PsCmdBot_GetWorkingDirectory) -Table $UserConfig -KeyNames $ConfigStor.EXPANDABLE_DIR_KEYS
+				$ConfigStor.USER.CONFIG = $UserConfig;
+			} else {
+				$UserConfig  = $ConfigStor.USER.CONFIG;
+			}
+
+			$SourceConfig =  PsCmdBot_CM_MergeConfig -Config1 $UserConfig -Config2 $RuntimeConfig;
+
+			#In this part will update the handlers default config in the 
 			#Expands the handlers default, and merges into the default!
 			$HandlersDefaultConfig 		= PsCmdBot_CM_GetHandlersDefaultConfig;
 			PsCmdBot_ExpandDirs -BasePath (PsCmdBot_GetWorkingDirectory) -Table $HandlersDefaultConfig -KeyNames $ConfigStor.EXPANDABLE_DIR_KEYS
 			$DefaultConfig.HANDLERS	= PsCmdBot_CM_MergeConfig -Config1 $HandlersDefaultConfig -Config2 $DefaultConfig.HANDLERS;
 
-			#Merges differences...
-			$CurrentConfig = PsCmdBot_CM_MergeConfig -Config1 $DefaultConfig -Config2 $UserConfig;
-			#Expand the paths of current config... (because it is comparable in the future...)
-			PsCmdBot_ExpandDirs -BasePath (PsCmdBot_GetWorkingDirectory) -Table $CurrentConfig -KeyNames $ConfigStor.EXPANDABLE_DIR_KEYS
+
+			$CurrentConfig = PsCmdBot_CM_MergeConfig -Config1 $DefaultConfig -Config2 $SourceConfig;
+
 
 			PsCmdBot_Log "	Current expanded config: $(PsCmdBot_Object2HashString $CurrentConfig -Expand)" "DEBUG"
 
-			PsCmdBot_Log "	last config: $(PsCmdBot_Object2HashString $ConfigStor.EFFECTIVE -Expand)" "DEBUG"
+			PsCmdBot_Log "	Last config: $(PsCmdBot_Object2HashString $ConfigStor.EFFECTIVE -Expand)" "DEBUG"
 
 			#Generate only the change keys!
 			$ChangedConfig = PsCmdBot_HashDiff -Table1 $ConfigStor.EFFECTIVE -Table2 $CurrentConfig -RemovedDefault $DefaultConfig;
 			#Expand the paths!
 			PsCmdBot_ExpandDirs -BasePath (PsCmdBot_GetWorkingDirectory) -Table $ChangedConfig -KeyNames $ConfigStor.EXPANDABLE_DIR_KEYS
-
-			
 		}
 					
 		if(!$FirstTime -and $ChangedConfig.count -gt 0){
@@ -1754,6 +1924,7 @@ $ErrorActionPreference= "Stop";
 		}
 		
 	}
+
 
 
 
@@ -2237,6 +2408,14 @@ $ErrorActionPreference= "Stop";
 							
 							if($u.message){
 								$m = $u.message;
+
+								#Check if user is a super admin!
+								$MsgFromSuper = $CurrentConfig.GLOBAL.ADMIN.SUPER_ADMINS -Contains $m.from.username;
+								if($MsgFromSuper){
+									if(PsCmdBot_CanLog "DEBUG"){
+										PSCmdBot_Log "Current message comes from a super!" "DEBUG"
+									}
+								}
 							
 								if(PsCmdBot_CanLog "VERBOSE"){
 									PSCmdBot_Log "Update is a message! MessageID: $($m.message_id)" "VERBOSE"
@@ -2264,7 +2443,7 @@ $ErrorActionPreference= "Stop";
 									$HandlerResult.mustReply = $true;
 									$HandlerResult.reply.message = "This chat is not authorized process this command!";
 								} 
-								elseif(!$MessageHandler.IS_AUTHORIZED($m) -and $MessageHandler.SOURCE -eq "COMMAND") {
+								elseif(!$MessageHandler.IS_AUTHORIZED($m) -and $MessageHandler.SOURCE -eq "COMMAND" -and !$MsgFromSuper ) {
 									$HandlerResult = NewHandlerResult $MessageHandler;
 									$HandlerResult.mustReply = $true;
 									$HandlerResult.reply.message = "Você não está autorizado a executar este comando";

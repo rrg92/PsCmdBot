@@ -81,6 +81,11 @@
 		}
 
 
+		#Admin configurations!
+		#This configurations cannot be changed by runtime!
+		ADMIN = @{
+			SUPER_ADMINS = @()
+		}
 		
 	}
 
