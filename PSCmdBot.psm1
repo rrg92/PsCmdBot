@@ -2353,6 +2353,39 @@ $ErrorActionPreference= "Stop";
 		
 	}
 		
+	#Triggers handles event
+	Function PsCmdBotI_Handler_FireEvent {
+		param($EventName)
+
+		$Method = "ON_"+$EventName;
+		$Stor = PsCmdBot_Stor_GetStorage;
+		$Handlers = $Stor.HANDLERS;
+		
+		if(PsCmdBot_CanLog "DEBUG"){
+			PsCmdBot_CanLog "Fire handler event $EventName" "DEBUG"
+		}
+
+
+		$Handlers.HANDLERS_LIST.GetEnumerator() | %{
+			$HandlerName = $_.Key;
+			$Handler = $_.Value;
+			$PointerToMethod = $Handler.psobject.Methods[$Method];
+
+			if(!$PointerToMethod ){
+				return;
+			}
+
+		
+			if(PsCmdBot_CanLog "DEBUG"){
+				PsCmdBot_CanLog "	Firing for handler $HandlerName" "DEBUG"
+			}
+
+			$out = $PointerToMethod.Invoke();
+		}
+
+
+
+	}
 	
 	
 	
@@ -2406,6 +2439,8 @@ $ErrorActionPreference= "Stop";
 			} else {
 				$token = Get-BotToken;
 			}
+
+			. PsCmdBotI_Handler_FireEvent "START";
 
 			PSCmdBot_Log "Starting waiting for updates. Token: $token" "PROGRESS";
 			

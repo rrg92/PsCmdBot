@@ -28,7 +28,7 @@
 	* OnLoader
 
 
-* Add support for add and remove configurtion
+* Add support for apppend configuration value in runtime!
 
 * Print configuration command
 
