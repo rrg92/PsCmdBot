@@ -324,13 +324,23 @@ $ErrorActionPreference= "Stop";
 				}
 				
 			
+				#Compares each value!
+				$VArr1 = @($V1);
+				$VArr2 = @($V2);
 
-				#TODO: THE NULL ARRAY PROBLEM
-				if($V1 -ne $V2){
+				if( $VArr1.count -ne $VArr2.count ){ #If counts are different...
 					$Diff.add($CurrKey, $CurrValue2);
+					return;
+				}
+
+				$i = $Varr1.count;
+				while($i--){
+					if( $Varr1[$i] -ne $Varr2[$i] ){ #If, at least, one value differs, then adds!
+						$Diff.add($CurrKey, $CurrValue2);
+						return;
+					}
 				}
 			}
-			
 		}
 		
 
@@ -460,11 +470,35 @@ $ErrorActionPreference= "Stop";
 				$type = $object.getType();
 				
 				if($type.FullName -like "*[[][]]"){
+					
+					if($Expand){
+						#If all elements of array are primitives, then represent the array as string!
+						$IsPrimitiveArray = $true;
+						$i = $object.count;
+					
+						while($i--){
+							if($object[$i] -ne $null){
+									$PosType = $object[$i].GetType();
+									if(-not ($PosType.IsPrimitive -or [decimal],[string],[datetime] -contains $PosType) ){
+										$IsPrimitiveArray  = $false;
+										break;
+									}
+							}
+						}
+
+
+						if($IsPrimitiveArray){
+							$AllObjects += $object -Join ",";
+							continue;
+						}
+
+					}
+				
 					$ALLObjects += "$($type.FullName):$($object.length)";
 					continue;
 				}
 				
-				if($Type.IsPrimitive -or [decimal],[string],[datetime] -contains $type  ){
+				if($Type.IsPrimitive -or [decimal],[string],[datetime] -contains $type ){
 					$IsPrimitive = $true;
 				}
 				
@@ -511,7 +545,27 @@ $ErrorActionPreference= "Stop";
 						$type = $PropValue.getType();
 						
 						if($type.FullName -like "*[[][]]"){
-							$PropValue = "$($type.FullName):$($PropValue.length)";
+							if($Expand){
+								#If all elements of array are primitives, then represent the array as string!
+								$IsPrimitiveArray = $true;
+								$i = $PropValue.count;
+							
+								while($i--){
+									if($PropValue[$i] -ne $null){
+											$PosType = $PropValue[$i].GetType();
+											if(-not ($PosType.IsPrimitive -or [decimal],[string],[datetime] -contains $PosType) ){
+												$IsPrimitiveArray  = $false;
+												break;
+											}
+									}
+								}
+							}
+
+							if($IsPrimitiveArray){
+								$PropValue = $PropValue -Join ","
+							} else {
+								$PropValue = "$($type.FullName):$($PropValue.length)";
+							}
 						} else {
 							$PropValue = $PropValue.toString()
 						}
@@ -1701,7 +1755,26 @@ $ErrorActionPreference= "Stop";
 		
 # CONFIGURATION MANAGEMENT
 	Function PsCmdBot_CM_GetConfiguration {
-		return $Global:PSCmdBot_Storage.CONFIGURATION.EFFECTIVE;
+		param($Path = $null)
+
+		if($Path -eq $null){
+			return $Global:PSCmdBot_Storage.CONFIGURATION.EFFECTIVE;
+		} else {
+			$Effective 	= $Global:PSCmdBot_Storage.CONFIGURATION.EFFECTIVE;
+			$Current	= $Effective;
+
+			$Path -Split '\.' | ?{$Current} | %{
+				if( $Current.Contains($_) ){
+					$Current = $Current[$_];
+				} else {
+					$Current = $null;
+				}
+			}
+
+			return $Current;
+		}
+
+		
 	}
 	
 	Function PsCmdBot_CM_MergeConfig {
