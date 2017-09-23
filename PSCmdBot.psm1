@@ -191,7 +191,7 @@ $ErrorActionPreference= "Stop";
 	
 		if(Get-Command ConvertFrom-Json  -EA "SilentlyContinue"){
 			ConvertFrom-Json $json;
-		} else {s
+		} else {
 			PsCmdBot_LoadJsonEngine
 			$jo=new-object system.web.script.serialization.javascriptSerializer
 			$jo.maxJsonLength=[int32]::maxvalue;
@@ -1576,7 +1576,7 @@ $ErrorActionPreference= "Stop";
 		$LastSeparatorPart=-1; #Will store the position of last param separator.
 		$ParamValue=@() #Here will store current parameter values!
 		$CurrentParam=""; #Here will store current parameter name.
-		[object]$TmpValue-""; #Temporary stores a object of a speific type other than string.
+		[object]$TmpValue=""; #Temporary stores a object of a speific type other than string.
 		$TempArrayValues=@(); #Temporary array that will store cluster values arrayis
 		$inArrayMode = $false; #Indicates that values separator was specified and values get assigned to same arrya in last position
 
@@ -1750,6 +1750,7 @@ $ErrorActionPreference= "Stop";
 		$text = $message.text;
 		
 		$CommandInfo = PsCmdBot_DCP_ParseCommand $message -CommandOnly;
+
 		return $CommandInfo.CommandName;
 	}
 		
