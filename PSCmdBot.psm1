@@ -1,3 +1,6 @@
+param(
+	$RecreateStorage = $false
+)
 #Módulo para o powershell!
 $ErrorActionPreference= "Stop";
 
@@ -8,9 +11,10 @@ $ErrorActionPreference= "Stop";
 	$DirSep					= [IO.Path]::DirectorySeparatorChar.ToString()
 
 	#This will contains the storage!
-	if(!$Global:PSCmdBot_Storage){
+	if(!$Global:PSCmdBot_Storage -or $RecreateStorage){
 		$Global:PSCmdBot_Storage=@{
 			DEFAULT_TOKEN 	= $null;
+			DEBUG_OPTIONS	= $null
 		};
 	}
 
@@ -1931,7 +1935,8 @@ $ErrorActionPreference= "Stop";
 		#Expands the default!
 		PsCmdBot_ExpandDirs -BasePath (PsCmdBot_GetWorkingDirectory) -Table $DefaultConfig -KeyNames $ConfigStor.EXPANDABLE_DIR_KEYS
 
-		if(PsCmdBot_CanLog "DEBUG"){
+
+		if( (PsCmdBot_CanLog "DEBUG") -and $Stor.DEBUG_OPTIONS.DUMP_DEFAULT_CONFIG){
 			PsCmdBot_Log "	Current expanded *default* config: $(PsCmdBot_Object2HashString $DefaultConfig -Expand)" "DEBUG"
 		}
 
@@ -2019,6 +2024,8 @@ $ErrorActionPreference= "Stop";
 		$ConfigStor.EFFECTIVE = $CurrentConfig;
 
 		#Invokes the configurations updates subscribers.
+		#The notify subcrisbers engine is need becase not only handlers can subscriber to them.
+		#Others components can!
 		PsCmdBot_CM_NotifySubscribers $ChangedConfig
 	}
 
@@ -2048,7 +2055,9 @@ $ErrorActionPreference= "Stop";
 				& $_.Script $Config;
 			}
 		}
-		
+
+		#Fires CHANGED_CONFIG for invoke handlers subscription!
+		PsCmdBotI_Handler_FireEvent "CONFIG_CHANGE" -ExtraParams @{ChangedConfig=$ChangedConfig};
 	}
 
 	
@@ -2107,7 +2116,12 @@ $ErrorActionPreference= "Stop";
 				$DefinitionMemberName 	= $_.Key;
 				$DefinitionMemberValue 	= $_.Value;
 				
-				if($DefinitionMemberValue -is [scriptblock]){
+				#Script block that starts with "ON_" are executed in context of event firing. Because this it cannot be a method! 
+				# First parameter is the handler object! If it are method, any things created inside it (like functions) we live just only method runs! This is not indeed behavior.
+				#We want the ON_START events able to allow handler writers add functions to current session.
+				#It responsbility of them to do all rights!
+				#It responsinility of user choose handlers that no unstable engine! If w handler do this, it cannot be a trust handler!
+				if($DefinitionMemberValue -is [scriptblock] -and  -not($DefinitionMemberName -like 'ON_*') ){
 					$Handler | Add-Member -Type ScriptMethod -Name $DefinitionMemberName -Value $DefinitionMemberValue
 				} else {
 					$Handler | Add-Member -Type Noteproperty -Name $DefinitionMemberName -Value $DefinitionMemberValue
@@ -2247,6 +2261,10 @@ $ErrorActionPreference= "Stop";
 					
 					#Gets current command name!
 					if($command){
+						if(PsCmdBot_CanLog "VERBOSE"){
+							PsCmdBot_Log "	Check Command: $Command --> $($this.SupportedCommandNames)" "VERBOSE"
+						}
+
 						return $this.SupportedCommandNames -Contains $command;
 					} else {
 						$CurrentCommand = PsCmdBot_DCP_GetCommandName $message;
@@ -2261,14 +2279,14 @@ $ErrorActionPreference= "Stop";
 			
 			#Builds a static list of supported commands names and its alias.
 			$Handler | Add-Member -Type noteproperty -Name SupportedCommandNames -Value $null -force;
-			$Handler.SupportedCommandNames = $Handler.COMMANDS.GetEnumerator() | %{
-				$Names = @($_.Key);
+			$Handler.COMMANDS.GetEnumerator() | %{
+				[string[]]$Names = @($_.Key);
 				
 				if($_.Value.ALIAS){
-					$Names += $_.Value.ALIAS
+					$Names += @($_.Value.ALIAS)
 				}
 				
-				return $Names;
+				$Handler.SupportedCommandNames += @($Names);
 			}
 			
 			#Buils a alias map to speed up searches...
@@ -2326,9 +2344,13 @@ $ErrorActionPreference= "Stop";
 				return $CurrentConfig.HANDLERS[$this.NAME];
 			}
 
+			<#
 			if($Handler.ON_CONFIG_CHANGE){
-				PsCmdBot_CM_AddSubscription -Name "Handler:$HandlerName" -Script ({param($Changed) $Handler.ON_CONFIG_CHANGE($Changed)}.GetNewClosure())
+				PsCmdBot_CM_AddSubscription -Name "Handler:$HandlerName" -Script ({
+						param($Changed) & $Handler.ON_CONFIG_CHANGE @{$Changed}
+					}.GetNewClosure())
 			}
+			#>
 			
 			$HANDLERS.add($HandlerName, $Handler);
 		}
@@ -2429,23 +2451,62 @@ $ErrorActionPreference= "Stop";
 		
 	#Triggers handles event
 	Function PsCmdBotI_Handler_FireEvent {
-		param($EventName)
+		[CmdLetBinding()]
+		param($EventName, $ExtraParams = $null, [switch]$DotSourced = $false)
 
-		$Method = "ON_"+$EventName;
+		if(PsCmdBot_CanLog "DEBUG"){
+			PsCmdBot_Log "Fire handler event $EventName" "DEBUG"
+		}
+
+		$EventPropName = "ON_"+$EventName;
 		$Stor = PsCmdBot_Stor_GetStorage;
 		$Handlers = $Stor.HANDLERS;
+
+
+		$HandlersNames 	= @($Handlers.HANDLERS_LIST.Keys);
+		$i				= $HandlersNames.count;
+		[hashtable]	$FullParams = $null;
+
+		while($i--){
+			$HandlerName = $HandlersNames[$i];
+			$Handler = $Handlers.HANDLERS_LIST[$HandlerName];
+
+			if(PsCmdBot_CanLog "DEBUG"){
+				PsCmdBot_Log "	Checking if $EventPropName there are on handler $HandlerName" "DEBUG"
+			}
+
+			#Property must be a scriptblock!
+			$EventScript = $Handler.psobject.properties[$EventPropName].Value;
+			
+			if(!$EventScript -or -not($EventScript -is [scriptblock])){
+				continue;
+			}
+
 		
-		if(PsCmdBot_CanLog "DEBUG"){
-			PsCmdBot_CanLog "Fire handler event $EventName" "DEBUG"
+			if(PsCmdBot_CanLog "DEBUG"){
+				PsCmdBot_Log "	Firing for handler $HandlerName" "DEBUG"
+			}
+
+			$FullParams = @{Handler=$Handler;Params=$ExtraParams};
+
+			if($DotSourced){
+				. $EventScript $FullParams
+			} else {
+				& $EventScript $FullParams
+			}
+			
 		}
 
 
+		<#
 		$Handlers.HANDLERS_LIST.GetEnumerator() | %{
 			$HandlerName = $_.Key;
 			$Handler = $_.Value;
-			$PointerToMethod = $Handler.psobject.Methods[$Method];
 
-			if(!$PointerToMethod ){
+			#Property must be a scriptblock!
+			$EventScript = $Handler.psobject.properties[$EventPropName];
+
+			if(!$EventScript -or -not($EventScript -is [scriptblock])){
 				return;
 			}
 
@@ -2454,13 +2515,28 @@ $ErrorActionPreference= "Stop";
 				PsCmdBot_CanLog "	Firing for handler $HandlerName" "DEBUG"
 			}
 
-			$out = $PointerToMethod.Invoke();
+			. $EventScript @{Handler=$Handler}
 		}
+		#>
 
 
 
 	}
 	
+# DEBUG OPTIONS
+
+	Function PsCmdBot_SetDebugOptions {
+		param($Options)
+
+		#Debug options
+		#This will update the debug options.
+		#The debug options controls behaviors of script like add certain outpus in logging message!
+		#Check doc/DEBUGGGING.md for a complete reference of this.
+		#Because this is indeed to be used by PsCmdBot development team, using this options is not encourajed and some can be undocumented!
+		
+		$Storage = PsCmdBot_Stor_GetStorage;
+		$Storage.DEBUG_OPTIONS  = $Options;
+	}
 	
 	
 # THE BOT MAIN
@@ -2488,12 +2564,14 @@ $ErrorActionPreference= "Stop";
 
 			##Sets start time!
 			PSCmdBot_SetStartTime
-			
-			#loading the handlers of messages!
-			PSCmdBot_LoadHandlers;		
 
 			#Notify all subscribers of configuration about first loading!
 			PSCmdBot_CM_UpdateConfig -FirstTime;
+
+			#loading the handlers of messages!
+			PSCmdBot_LoadHandlers;		
+
+
 			
 			#Merges config to determine current configuration!
 			#Updates the configuration!
@@ -2514,7 +2592,7 @@ $ErrorActionPreference= "Stop";
 				$token = Get-BotToken;
 			}
 
-			. PsCmdBotI_Handler_FireEvent "START";
+			. PsCmdBotI_Handler_FireEvent "START" -DotSourced;
 
 			PSCmdBot_Log "Starting waiting for updates. Token: $token" "PROGRESS";
 			
@@ -2718,6 +2796,8 @@ $ErrorActionPreference= "Stop";
 	
 	}
 	
+
+
 
 	
 # MODULE INITILIZATION
