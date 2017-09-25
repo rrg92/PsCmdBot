@@ -86,15 +86,36 @@
 		param($message)
 	}
 	
-	
+	<# Event methods
+
+		The events methods start with "ON_" in name.
+		This are script that are executed when some event occurs.
+		This scriptblocks not are converted into a method of handler. This are executed as is.
+
+		The engine will passes a  hashtable as first parameter of this script:
+
+			@{
+				Handler = HandlerObject
+				Params = @{}
+
+			}
+
+		The "Handler" is the object that represents the handler!
+		The PArams will contains some parameters depending of event. Check ON_ descriptiion to more information.
+
+	#>
+
 	#Configuration update subscriber.
 	#This will be called wheenver some configurastions changes.
 	#A configuration object, just with change keys, will be passed.
+	#Params: 
+	#	ChangedConfig - A hashtable containing the configuratons items that was changed!
 	ON_CONFIG_CHANGE = {
 	
 	}
 
 	#Actions to be executed when engine is about to enter on main loop (inside Start-Cmdbot cmdlet)
+	#Params: none.
 	ON_START = {
 
 	}
