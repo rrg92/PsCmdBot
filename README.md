@@ -45,7 +45,7 @@ If you are a message handler writer, then you can use documentation and PsCmdBot
 ### Message Handlers EXamples
 
 The [documentation of message handlers](doc/MESSAGEHANDLERS.md) contains lot of information for developing your handler.
-Also, check the [message handlers examples](messagehandlers\examples) for more ideas.
+Also, check the [message handlers examples](messagehandlers/examples) for more ideas.
 
 
 ## Main Features
