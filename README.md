@@ -28,7 +28,7 @@ Start-CmdBot -token 'MyBotToken' -WorkingDirectory C:\MyBot
 
 ### Macro Flow
 
-![Basic Flow](doc\images\PsCmdBot_BasicFlow.png)
+![Basic Flow](doc/images/PsCmdBot_BasicFlow.png)
 
 
 
