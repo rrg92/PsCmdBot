@@ -28,38 +28,7 @@ Start-CmdBot -token 'MyBotToken' -WorkingDirectory C:\MyBot
 
 ### Macro Flow
 
----------------- TELEGRAM CLIENTS ---------------
-	SOMEONE ---- telegram message ----> @YourBot_bot
--------------------------------------------------
-
----------------- YOUR BOT SERVER ------------------------------------
-	Start-CmdBot -Token 'YourBotToken' -WorkingDirectory 'YourBotWorkingDir' 
-	-->	|--> WAITING MESSAGES ------- TELEGRAM API
-	|	|
-	|	| A MESSAGE ARRIVES
-	|	|
-	|	|
-	|	|######################### THE PSCMDBOT ENGINE ########################
-	|	|
-	|	|------------> CHECK SOME SECURITY CONFIGURATIONS
-	|	|------------> IDENTIFY THE COMMAND
-	|	|------------> IDENTIFY MESSAGE HANDLER TO PROCESS THIS COMMAND
-	|	|------------> CHECK PRIVILEGES OF EXECUTION
-	|	|------------> RUN THE MESSAGE HANDLER (HANDLER TAKES CONTROL OF BOT)
-	|	|
-	|	|######################### THE HANDLER CODE ##########################
-	|	|
-	|	|------------> PARSE COMMAND, GET PARAMETERS, RUN ACTIONS
-	|	|------------> GENERATE A RESPONSE AND RETURN TO ENGINE
-	|	|
-	|	|######################### THE PSCMDBOT ENGINE ##########################
-	|	|
-	|	|------------> CHECK IF HANDLER ASK TO SEND A RESPONSE
-	|	|------------> RESPONSE THE MESSAGE!
-	|	|
-	^----	
-	
----------------------------------------------------------------------
+![Basic Flow](doc\images\PsCmdBot_BasicFlow.png)
 
 
 
