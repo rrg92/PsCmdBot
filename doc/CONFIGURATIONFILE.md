@@ -10,8 +10,7 @@ Check WORKINGDIRECTORY.md for more information about working directory.
 
 ## The default configuration file
 
-The default cofniguration file is located on <ModuleRoot>\config.default.ps1
-This file define all possible options, the documentation of them.
+The [default configuration file](/default.config.ps1) define all possible options, the documentation of them.
 The author os message handlers, must place default configuration on it and document appropriately using comments.
 
 The default configuration file options is used when no user configuration is specified.
