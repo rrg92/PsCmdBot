@@ -1,7 +1,7 @@
 <# 
 	Default configuration file.
 	Use this file for check for all possible configurations
-	Note for handlers writes: Places configurations of your handlers in a separte key in format, "HANDLERNAME"  
+	Note for handlers writes: Places default configurations of your handlers in the "CONFIG" key of handler layout
 #>
 
 @{
