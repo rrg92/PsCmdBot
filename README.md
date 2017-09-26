@@ -50,22 +50,22 @@ Also, check the [message handlers examples](messagehandlers\examples) for more i
 
 ## Main Features
 
-* A default command parse (DCP)
+* **A default command parse (DCP)**
 With DCP, you dont need worry about write a interpreter to your bot commands.
 The DCP takes the command message sent by user in telegram, and extract parameters, strings , arrays etc. It provides the values in native powershell objects!
 Read more in [DCP documentation](doc/DCP.md)
 
-* A default authorization check
+* **A default authorization check**
 Security is a important topic inside PsCmdBot engine. Because you allowing the any user in the World sent commands to your bot, we provide a basic security mechanism. By default, only explicity authorized users can execute any command of thridy party handlers. You authroized users using the configuration file in working directory.
 Also, the PsCmdBot engine provides another configuratons options to control chats that can send commands, super admins, etc.
 
-* Configurations Files
+* **Configurations Files**
 The PsCmdBot engine provies a rich and powerfull model of configuration. If you are a handler write, you can define default options that your message handler will need. The user, them, can change this values using a configuration file in working directory or via runtime. Configuration can be changed in runtime, allowing bot change behavior in any time.
 Configuratons are powershell script that returns a hashtable. This facilitates user read of configuration and implementation of it.
 Read more in [configuration file documentation](doc/CONFIGURATIONFILE.md)
 
 
-* Logging
+* **Logging**
 THe PsCmdBot uses the [XLogging](https://github.com/rrg92/XLogging) powershell modules. That its, it can logs messages to files, console, etc. You can control many logging options in configuration files.
 
 
