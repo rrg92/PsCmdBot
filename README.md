@@ -60,14 +60,12 @@ Security is a important topic inside PsCmdBot engine. Because you allowing the a
 Also, the PsCmdBot engine provides another configuratons options to control chats that can send commands, super admins, etc.
 
 * Configurations Files
-
 The PsCmdBot engine provies a rich and powerfull model of configuration. If you are a handler write, you can define default options that your message handler will need. The user, them, can change this values using a configuration file in working directory or via runtime. Configuration can be changed in runtime, allowing bot change behavior in any time.
 Configuratons are powershell script that returns a hashtable. This facilitates user read of configuration and implementation of it.
 Read more in [configuration file documentation](doc/CONFIGURATIONFILE.md)
 
 
 * Logging
-
 THe PsCmdBot uses the [XLogging](https://github.com/rrg92/XLogging) powershell modules. That its, it can logs messages to files, console, etc. You can control many logging options in configuration files.
 
 
