@@ -2329,12 +2329,24 @@ $ErrorActionPreference= "Stop";
 				[string[]]$SYSTEM_HANDLERS = 'AUXCMDS';
 
 				if(  $SYSTEM_HANDLERS -Contains $this.NAME  ){
-					$ChatAuthorizeds = $CurrentConfig.GLOBAL.SECURITY.SYSTEMHANDLERS_CHATS;
+					$GroupsAuthorizeds 	= $CurrentConfig.GLOBAL.SECURITY.SYSTEMHANDLERS_CHATS | ? {$_ -match '^-?\d+$'-or $_ -eq "*"};
+					$UserAuthorizeds	= $CurrentConfig.GLOBAL.SECURITY.SYSTEMHANDLERS_CHATS | ? {$_ -match '^@'};
 				} else {
-					$ChatAuthorizeds = $CurrentConfig.GLOBAL.SECURITY.USERHANDLERS_CHATS;
+					$GroupsAuthorizeds = $CurrentConfig.GLOBAL.SECURITY.USERHANDLERS_CHATS | ? {$_ -match '^-?\d+$' -or $_ -eq "*"};
+					$UserAuthorizeds	= $CurrentConfig.GLOBAL.SECURITY.USERHANDLERS_CHATS | ? {$_ -match '^@'};
+				}
+
+				if(PsCmdBot_CanLog "DEBUG"){
+					PsCmdBot_Log "	GroupsAuthorized: $GroupsAuthorized. UserAuthorizeds: $UserAuthorizeds" "DEBUG"
+				}
+
+				$IsFromAuthorizedUser = @($UserAuthorizeds) -Contains ("@"+$update.message.from.username) -and $update.message.chat.type -eq "private"
+
+				if($IsFromAuthorizedUser){
+					return $true;
 				}
 				
-				return ($ChatAuthorizeds -Contains $update.message.chat.id -or $ChatAuthorizeds -eq '*');	
+				return ($GroupsAuthorizeds -Contains $update.message.chat.id -or $GroupsAuthorizeds -eq '*');	
 			}
 			
 			#Get handler effective config!

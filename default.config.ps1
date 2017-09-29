@@ -38,8 +38,6 @@
 			#The log file. You can specify relative path to the working directory.
 			#You also can specify a absolute path
 			FILE	= 'log.log';
-
-
 		}
 
 		
