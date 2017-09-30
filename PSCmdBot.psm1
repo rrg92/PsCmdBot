@@ -14,7 +14,10 @@ $ErrorActionPreference= "Stop";
 	if(!$Global:PSCmdBot_Storage -or $RecreateStorage){
 		$Global:PSCmdBot_Storage=@{
 			DEFAULT_TOKEN 	= $null;
-			DEBUG_OPTIONS	= $null
+			DEBUG_OPTIONS	= @{
+				DUMP_DEFAULT_CONFIG 	= $false
+				DUMP_EFFECTIVE_CONFIG	= $false
+			}
 		};
 	}
 
@@ -1952,6 +1955,8 @@ $ErrorActionPreference= "Stop";
 			$CurrentConfig = $DefaultConfig.psobject.copy();
 			$ChangedConfig = $DefaultConfig.psobject.copy();
 			PSCmdBot_Log "First time configuration load!"
+			$ConfigStor.FIRST_USERCONFIG_CHECK = $true; #Resets in order to load user configuration!
+			$ConfigStor.USER.LAST_FILE_MODIFIED = $null
 		} else {
 			#Have updates?
 			$UserConfig 	= PsCmdBot_CM_GetUserConfig;
@@ -2575,14 +2580,16 @@ $ErrorActionPreference= "Stop";
 			
 
 			##Sets start time!
+			PSCmdBot_Log "Setting bot start time"
 			PSCmdBot_SetStartTime
 
 			#Notify all subscribers of configuration about first loading!
+			PSCmdBot_Log "First time configuration load"
 			PSCmdBot_CM_UpdateConfig -FirstTime;
 
-			#loading the handlers of messages!
-			PSCmdBot_LoadHandlers;		
-
+			#loading the handlers of messages! 
+			PSCmdBot_Log "Loading the message handlers"
+ 			PSCmdBot_LoadHandlers;		
 
 			
 			#Merges config to determine current configuration!
@@ -2594,13 +2601,16 @@ $ErrorActionPreference= "Stop";
 			}
 
 			#CurrentCofnig
+			PSCmdBot_Log "Updating configuration!"
 			$CurrentConfig = & $GetCurrentConfigScript;
 
 			
-			
+			PSCmdBot_Log "Getting toke!"
 			if($token){
+				PSCmdBot_Log "	Setting the default!"
 				Set-DefaultToken -token $token;
 			} else {
+				PSCmdBot_Log "	Getting a new token!"
 				$token = Get-BotToken;
 			}
 
