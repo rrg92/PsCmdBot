@@ -2309,7 +2309,7 @@ $ErrorActionPreference= "Stop";
 			$Handler | Add-Member -Type ScriptMethod -Name getRealCommandName -Value {
 				param($name) 
 				
-				if($this.Aliases[$name]){
+				if($name -and $this.Aliases[$name]){
 					return $this.Aliases[$name]
 				} else {
 					return $name;
