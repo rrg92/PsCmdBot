@@ -1,7 +1,16 @@
 # Hellow World handler!
 
 @{
-	ON_START = @{}
+	ON_START = {
+		
+		$ToolsDir = $PsScriptRoot
+		
+		Get-AiTools -global | Remove-AiTool 
+		Add-AiTool -Global "$ToolsDir/tools.ps1"
+		
+		
+		
+	}
 	
 	IS_AUTHORIZED = {
 		return $true;
@@ -24,20 +33,14 @@
 			User Info (JSON):
 				$UserJsonInfo
 				
-			Current Date/Time: $(Get-Date)
+			Use provided tools to help answer user questions.
 		"
 		
 		
 		$ChatId = $update.message.chat.id;
 		$ChatName = "Telegram:$ChatId"
 		
-		$Chat = Get-PowershaiChat -ChatId $ChatName;
-		
-		if(!$Chat){
-			$Chat = New-PowershaiChat $ChatName
-		}
-		
-		 
+		$Chat = New-PowershaiChat $ChatName -IfNotExists
 		Set-PowershaiActiveChat $ChatName;
 		
 		Set-PowershaiChatParameter MaxContextSize 128000
