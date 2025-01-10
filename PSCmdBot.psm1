@@ -1,4 +1,4 @@
-param(
+﻿param(
 	$RecreateStorage = $false
 )
 #Módulo para o powershell!
@@ -20,6 +20,8 @@ $ErrorActionPreference= "Stop";
 			}
 		};
 	}
+	
+import-module -force "$PsScriptRoot/lib/http.psm1"
 
 # AUXILIARY	
 	Function PsCmdBot_CheckAssembly {
@@ -100,6 +102,15 @@ $ErrorActionPreference= "Stop";
 				
 				$msgException += $msgTemplate -f $num,$linha,$linhaOffset,$code,$msg
 			}
+		}
+		
+		$Stack = $e.ScriptStackTrace
+		
+		if($Stack){
+			$msgException += @(
+				""
+				$Stack
+			)
 		}
 		
 		return $msgException -join "`r`n"
@@ -685,98 +696,16 @@ $ErrorActionPreference= "Stop";
 		$ErrorActionPreference="Stop";
 		
 		write-verbose "$($MyInvocation.InvocationName):  URL param is: $Url";
-		
-		
-		try {
-			if(!$data){
-				$data = "";
-			}
-		
-			if($data -is [hashtable]){
-				write-verbose "Converting input object to json string..."
-				$data = PSCmdBot_ConvertToJson $data;
-			}
-			
-			write-verbose "$($MyInvocation.InvocationName):  json that will be send is: $data"
-			
-			write-verbose "Usando URL: $URL"
-		
-			write-verbose "$($MyInvocation.InvocationName):  Creating WebRequest method... Url: $url. Method: $Method ContentType: $ContentType";
-			$Web = [System.Net.WebRequest]::Create($url);
-			$Web.Method = $method;
-			$Web.ContentType = $contentType
-			
-			#Determina a quantidade de bytes...
-			[Byte[]]$bytes = [byte[]][char[]]$data;
-			
-			#Escrevendo os dados
-			$Web.ContentLength = $bytes.Length;
-			write-verbose "$($MyInvocation.InvocationName):  Bytes lengths: $($Web.ContentLength)"
-			
-			
-			write-verbose "$($MyInvocation.InvocationName):  Getting request stream...."
-			$RequestStream = $Web.GetRequestStream();
-			
-			
-			try {
-				write-verbose "$($MyInvocation.InvocationName):  Writing bytes to the request stream...";
-				$RequestStream.Write($bytes, 0, $bytes.length);
-			} finally {
-				write-verbose "$($MyInvocation.InvocationName):  Disposing the request stream!"
-				$RequestStream.Dispose() #This must be called after writing!
-			}
-			
-			
-			
-			write-verbose "$($MyInvocation.InvocationName):  Making http request... Waiting for the response..."
-			$HttpResp = $Web.GetResponse();
-			
-			
-			
-			$responseString  = $null;
-			
-			if($HttpResp){
-				write-verbose "$($MyInvocation.InvocationName):  charset: $($HttpResp.CharacterSet) encoding: $($HttpResp.ContentEncoding). ContentType: $($HttpResp.ContentType)"
-				write-verbose "$($MyInvocation.InvocationName):  Getting response stream..."
-				$ResponseStream  = $HttpResp.GetResponseStream();
-				
-				write-verbose "$($MyInvocation.InvocationName):  Response stream size: $($ResponseStream.Length) bytes"
-				
-				$IO = New-Object System.IO.StreamReader($ResponseStream);
-				
-				write-verbose "$($MyInvocation.InvocationName):  Reading response stream...."
-				$responseString = $IO.ReadToEnd();
-				
-				write-verbose "$($MyInvocation.InvocationName):  response json is: $responseString"
-			}
-			
-			
-			write-verbose "$($MyInvocation.InvocationName):  Response String size: $($responseString.length) characters! "
-			return $responseString;
-		} catch {
-			throw "ERROR_CALLING_TELEGRAM_URL: $_";
-		} finally {
-			if($IO){
-				$IO.close()
-			}
-			
-			if($ResponseStream){
-				$ResponseStream.Close()
-			}
-			
-			<#
-			if($HttpResp){
-				write-host "Finazling http request stream..."
-				$HttpResp.finalize()
-			}
-			#>
 
-		
-			if($RequestStream){
-				write-verbose "Finazling request stream..."
-				$RequestStream.Close()
-			}
+		$HttpParams = @{
+			data 		= $data
+			method 		= $method 
+			ContentType = $ContentType
+			url 		= $url 
 		}
+		
+		
+		(Invoke-Http @HttpParams).text
 	}
 
 	
@@ -818,6 +747,14 @@ $ErrorActionPreference= "Stop";
 		return ([datetime]'1970-01-01').toUniversalTime().addSeconds($unixts).toLocalTime();
 	}
 	
+	# resolve pathg 
+	
+	function ResolvePath {
+		param($path)
+		
+		$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path)
+	}
+
 
 	#Set value of a option
 	Function Set-PsCmdBotOption {
@@ -870,158 +807,7 @@ $ErrorActionPreference= "Stop";
 		}
 	}
 	
-	### HTTP REQUESTS SUPPORT
-		#Copies bytes from a stream to another!
-		Function PsCmdBot_CopyToStream {
-			param($From,$To)
-			
-			[Byte[]]$Buffer = New-Object Byte[](4096);
-			$BytesRead = 0;
-			while( ($BytesRead = $From.read($Buffer, 0,$Buffer.length)) -gt 0  ){
-				$To.Write($buffer, 0, $BytesRead);
-			}
-		}
-
-		#Converts a hashtable to a URLENCODED format to be send over HTTP requests.
-		Function PSCmdBot_BuildURLEncoded {
-			param($DATA)
-			
-			$FinalString = @();
-			$DATA.GetEnumerator() | %{
-				$FinalString += "$($_.Key)=$($_.Value)";
-			}
-
-			Return ($FinalString -Join "&");
-		}
-
-		#Makes a POST HTTP call and return cmdlet with the results.
-		#This will return a object containing following:
-		#	raw 		- The raw bytes of response content.
-		#	html		- The html respponse, if contentType is text/html
-		#	httpResponse - The original http response object!
-		#	session	- The session data, to be used as the parameter "session" to simulate sessions!
-		Function PSCmdBot_InvokeHttp {
-			[CmdLetBinding()]
-			param($URL, [hashtable]$data = @{}, $Session = $null, $method = 'POST', [switch]$AllowRedirect = $false)
-			
-			
-			$Result = New-Object PsObject @{
-				raw = $null
-				html = $null
-				httpResponse = $null
-				session = @{cookies=$null}
-			}
-			
-			$CookieContainer = New-Object Net.CookieContainer;
-			
-			if($Session){
-				write-verbose "$($MyInvocation.InvocationName): Session was informed. Importing cookies!"
-				$Session.Cookies | ?{$_} | %{
-						write-verbose "$($MyInvocation.InvocationName): Cookie $($_.Name) imported!"
-						$CookieContainer.add($_);
-				}
-			}
-			
-			try {
-				$HttpRequest 					= [Net.WebRequest]::Create($URL);
-				$HttpRequest.CookieContainer 	= $CookieContainer;
-				$HttpRequest.Method 			= $method;
-				$HttpRequest.AllowAutoRedirect 	= $AllowRedirect
-				
-				if($HttpRequest.method -eq 'POST'){
-					write-verbose "$($MyInvocation.InvocationName): Setiing up the POST headers!"
-					$PostData 	= PSCmdBot_BuildURLEncoded $data
-					write-verbose "$($MyInvocation.InvocationName): Post data encoded is: $PostData"
-					$PostBytes 	= [System.Text.Encoding]::UTF8.GetBytes($PostData)
-					$HttpRequest.ContentType = 'application/x-www-form-urlencoded';
-					$HttpRequest.ContentLength 	= $PostBytes.length;
-					write-verbose "$($MyInvocation.InvocationName): Post data length is: $($PostBytes.Length)"
-					
-					write-verbose "$($MyInvocation.InvocationName): getting request stream to write post data..."
-					$RequestStream					= $HttpRequest.GetRequestStream();
-					try {
-						write-verbose "$($MyInvocation.InvocationName): writing the post data to request stream..."
-						$RequestStream.Write($PostBytes, 0, $PostBytes.Length);
-					} finally {
-						write-verbose "$($MyInvocation.InvocationName): disposing the request stream..."
-						$RequestStream.Dispose();
-					}
-				}
-				
-				write-verbose "$($MyInvocation.InvocationName): Calling the page..."
-				$HttpResponse = $HttpRequest.getResponse();
-				
-				if($HttpResponse){
-					write-verbose "$($MyInvocation.InvocationName): Http response received. $($HttpResponse.ContentLength) bytes of $($HttpResponse.ContentType)"
-					$Result.httpResponse = $HttpResponse;
-					
-					if($HttpResponse.Cookies){
-						write-verbose "$($MyInvocation.InvocationName): Generating response session!";
-						$HttpResponse.Cookies | %{
-							write-verbose "$($MyInvocation.InvocationName): Updating path of cookie $($_.Name)";
-							$_.Path = '/';
-						}
-						
-						$Result.session = @{cookies=$HttpResponse.Cookies};
-					}
-					
-					
-					write-verbose "$($MyInvocation.InvocationName): Getting response stream and read it..."
-					$ResponseStream = $HttpResponse.GetResponseStream();
-					
-					write-verbose "$($MyInvocation.InvocationName): Creating memory stream and storing bytes...";
-					$MemoryStream = New-Object IO.MemoryStream;
-					PsCmdBot_CopyToStream -From $ResponseStream -To $MemoryStream
-					$ResponseStream.Dispose();
-					$ResponseStream = $null;
-
-
-					#If content type is text/html, then parse it!
-					if($HttpResponse.contentType -like 'text/html;*'){
-						write-verbose "$($MyInvocation.InvocationName): Creating streamreader to parse html response..."
-						$MemoryStream.Position = 0;
-						$StreamReader = New-Object System.IO.StreamReader($MemoryStream);
-						write-verbose "$($MyInvocation.InvocationName): Reading the response stream!"
-						$ResponseContent =  $StreamReader.ReadToEnd();
-						write-verbose "$($MyInvocation.InvocationName): Using HAP to load HTML..."
-						$HAPHtml = New-Object HtmlAgilityPack.HtmlDocument
-						$HAPHtml.LoadHtml($ResponseContent);
-						$Result.html = $HAPHtml;
-					}
-					
-					write-verbose "$($MyInvocation.InvocationName): Copying bytes of result to raw content!";
-					$MemoryStream.Position = 0;
-					$Result.raw = $MemoryStream.toArray();
-					$MemoryStream.Dispose();
-					$MemoryStream = $null;
-				}
-				
-				return $Result;
-			} catch {
-				throw "INVOKE_HTTP_ERROR: $_"
-			} finnaly {
-				if($MemoryStream){
-					$MemoryStream.Dispose();
-				}
-				
-				if($StreamReader){
-					$StreamReader.Dispose();
-				}
-				
-				
-				if($ResponseStream){
-					$ResponseStream.close();
-				}
-			
-				if($HttpResponse){
-					$HttpResponse.close();
-				}
-				
-
-			}
-			
-		}
-		
+	
 	
 	
 # TELEGRAM API
@@ -1121,6 +907,29 @@ $ErrorActionPreference= "Stop";
 		return (TranslateResponseJson $APIResponse);
 	}
 
+	# Implementation of SendChataction
+	# https://core.telegram.org/bots/api#sendChatAction
+	function Send-TelegramChatAction {
+			[CmdLetBinding()]
+			param(
+				 [string]$token
+				,[string]$ChatId
+				,[string]$action
+				
+			)
+			
+		$token = Get-BotToken -token $token;
+		$URL_API = "https://api.telegram.org/bot$($token)/sendChatAction"
+		
+		$Params = @{
+			chat_id = $ChatId
+			action 	= $action
+		}
+		
+		$APIResponse = PSCmdBot_CallTelegramURL -Url $URL_API -Data $Params
+		
+		return (TranslateResponseJson $APIResponse);
+	}
 
 # GENERAL ACTIONS
 	Function PsCmdBot_Initialize {
@@ -1137,7 +946,7 @@ $ErrorActionPreference= "Stop";
 			throw "PSCMDBOT_WORKINGDIRECTORY_NOTFOUND"
 		}
 		
-		$Stor.PATHS.WORKING_DIRECTORY = $WorkingDirectory;
+		$Stor.PATHS.WORKING_DIRECTORY = [string](Resolve-Path $WorkingDirectory);
 	}
 	
 	#Sets current working directory
@@ -1227,7 +1036,7 @@ $ErrorActionPreference= "Stop";
 	
 # LOGGING 
 	Function PSCmdBot_Log_SetDefaultLevel {
-		$PSCMdBotLog | Set-DefaultLogLevel -DefaultLevel "PROGRESS";
+		
 	}
 	
 # STORAGE HANDLING
@@ -1382,6 +1191,8 @@ $ErrorActionPreference= "Stop";
 	Function PsCmdBot_ReplyListener_Listen {
 		param($MessageFilter, $HandlerName, $data = $null, $ReplyCount = 1)
 		
+		PsCmdBot_Log "Adding message listener: $($MessageFilter.message_id), Handler = $HandlerName" "verbose"
+		
 		$Stor = PsCmdBot_Stor_GetStorage;
 		$ReplyListenerStor = $Stor.REPLY_LISTENER
 		$HANDLERS = $Stor.HANDLERS.HANDLERS_LIST;
@@ -1389,79 +1200,85 @@ $ErrorActionPreference= "Stop";
 		if(!$MessageFilter.message_id){
 			throw "PPSCMDBOT_REPLYLISTENER_LISTEN_EMPTYMESSAGEID"
 		}
-	
-		if( $ReplyListenerStor.Contains( $MessageFilter.message_id )  ){
-			throw "PPSCMDBOT_REPLYLISTENER_LISTEN_EXISTENTID: $($MessageFilter.message_id)"
-		}
 		
 		$Handler = $HANDLERS[$HandlerName];
 		if(!$Handler){
 			throw "PPSCMDBOT_REPLYLISTENER_LISTEN_INVALIDMSGHANDLER: $HandlerName"
 		}
-		
-		#Creates a new entry
-		$ListenerEntry = New-Object PSObject -prop @{
-			MessageFilter 	= $MessageFilter
-			Handler 		= $Handler
-			Lifetime		= $ReplyCount
-			data			= $data
+	
+		$ListenerEntry = $ReplyListenerStor[$MessageFilter.message_id]
+		if(!$ListenerEntry){
+			#Creates a new entry
+			$ListenerEntry = New-Object PSObject -prop @{
+				MessageFilter 	= $MessageFilter
+				Handlers 		= @{}
+			}
+			
+			$ReplyListenerStor.add( $MessageFilter.message_id, $ListenerEntry );
 		}
 		
+		$ListeningHandlers 	= $ListenerEntry.handlers;
+		$HandlerSlot 		= $ListeningHandlers[$HandlerName]
 		
-		$ReplyListenerStor.add( $MessageFilter.message_id, $ListenerEntry );
 		
+		if($HandlerSlot){
+			throw "PPSCMDBOT_REPLYLISTENER_REPEATED_LISTEN: $HandlerName $($MessageFilter.message_id)"
+		}
+		
+		$NextOrder = $ListeningHandlers.count + 1;
+		
+		$HandlerSlot = [PsCustomObject]@{
+			handler		= $Handler
+			order 		= $NextOrder
+			data 		= $data 
+			Lifetime 	= $ReplyCount
+		}
+		
+		$ListeningHandlers[$HandlerName] = $HandlerSlot;
 	}
 	
 	#Removes a listener to a msg reply.
 	Function PsCmdBot_ReplyListener_Remove {
-		param($MessageFilter)
+		param($MessageFilter, $HandlerName)
 		
 		$Stor = PsCmdBot_Stor_GetStorage;
 		$ReplyListenerStor = $Stor.REPLY_LISTENER
 		
-		if($ReplyListenerStor.Contains($MessageFilter.message_id)){
+		$ListenSlot = $ReplyListenerStor[$MessageFilter.message_id]
+		
+		if(!$ListenSlot){
+			return;
+		}
+		
+		$HandlerSlot = $ListenSlot.Handlers[$HandlerName];
+		
+		if($HandlerSlot){
+			$ListenSlot.Handlers.Remove($HandlerName);
+		}
+		
+		if($ReplyListenerStor.Handlers.count -eq 0){
 			$ReplyListenerStor.Remove($MessageFilter.message_id)
 		}
-		
 	}
 	
-	#Check if a message is on list. If is, returns the ListenerEntry associated with it.
-	#Else, returns $null.
-	#Also, manipulates updates the lifetime counter! This must be only way to access a listener entry.
-	Function PsCmdBot_ReplyListener_CheckMessage {
-		param($Message)
-		
-		$Stor = PsCmdBot_Stor_GetStorage;
-		$ReplyListenerStor = $Stor.REPLY_LISTENER
-		
-		if( $Message.reply_to_message ){
-			
-			$ListenerEntry =  $ReplyListenerStor[$Message.reply_to_message.message_id];
-			
-			if(!$ListenerEntry){
-				return $null;
-			}
-			
-			if($ListenerEntry.Lifetime -eq 0){
-				return $null;
-			} else {
-				$ListenerEntry.Lifetime--;
-			}
-			
-			return $ListenerEntry;
-		}
-		
-	}
+
 	
 	
 	#Gets the data associated with a message listener entry
 	Function PsCmdBot_ReplyListener_GetData {
-		param($MessageFilter)
+		param($MessageFilter, $HandlerName)
 		
 		$Stor = PsCmdBot_Stor_GetStorage;
 		$ReplyListenerStor = $Stor.REPLY_LISTENER
 		
-		$Entry = $ReplyListenerStor[$MessageFilter.message_id]
+		$ListenerSlot = $ReplyListenerStor[$MessageFilter.message_id]
+		
+		if(!$ListenerSlot){
+			return;
+		}
+		
+		$Entry = $ListenerSlot.Handlers[$HandlerName]
+		
 		if($Entry){
 			return $Entry.data;
 		}
@@ -1800,6 +1617,7 @@ $ErrorActionPreference= "Stop";
 	}
 
 	Function PsCmdBot_CM_GetUserConfig {
+		
 		$Stor = PsCmdBot_Stor_GetStorage;
 		$ConfigurationStore = $Stor.CONFIGURATION;
 		$WorkingDirectory = PsCmdBot_GetWorkingDirectory;
@@ -2071,26 +1889,30 @@ $ErrorActionPreference= "Stop";
 
 
 # MESSAGE HANDLERS
-	Function NewHandlerResult {
+	Function NewMessageReply {
 		param($Handler)
 		
-		if(!$Handler){
-			$Ex = PSCmdBot_GetNewException -ID 'HANDLERRESULT_NEW_EMPTYHANDLER';
-			throw $Ex;
+		[PsCustomObject]@{
+			data 		= $null
+			
+			
+			#Previous Handles that processed that message!
+			# 0 is most old, -1 is current!
+			handlers 	= @()
+			
+			#To be used by reply script 
+			mustReply	= $false # if true, will sent reply.
+			
+			#The reply message!
+			reply 		= @{
+							#reply message.
+							#If string, is a text reply!
+							message = $null
+							
+							#Scripts to be executed in context of reply. First argumnet is own HandlerResult. SEcond is replyMessage.
+							script	= @()
+						}
 		}
-		
-		$o = New-Object PsObject -Prop @{
-			handler = $handler
-			data = $null
-			mustReply=$false;
-			reply = @{
-				message = $null
-				script	= $null #Script to be executed in context of reply. First argumnet is own HandlerResult. SEcond is replyMessage.
-			}
-		}
-		
-		return $o;
-		
 	}
 	
 	
@@ -2113,6 +1935,11 @@ $ErrorActionPreference= "Stop";
 				return;
 			}
 			
+			if($HandlerDefinition.DISABLED){
+				PSCmdBot_Log "Ignoring handle $HandlerName because was disabled" WARNING;
+				return;
+			}
+			
 			PSCmdBot_Log "$($MyInvocation.InvocationName): Initializing handler $HandlerName"
 			
 			#Turn keys in definition into handlers methods and properties...
@@ -2120,6 +1947,10 @@ $ErrorActionPreference= "Stop";
 			$HandlerDefinition.GetEnumerator() | %{
 				$DefinitionMemberName 	= $_.Key;
 				$DefinitionMemberValue 	= $_.Value;
+				
+				if($DefinitionMemberName -eq "CHECK_COMMAND"){
+					$DefinitionMemberName = "FILTER_UPDATE"
+				}
 				
 				#Script block that starts with "ON_" are executed in context of event firing. Because this it cannot be a method! 
 				# First parameter is the handler object! If it are method, any things created inside it (like functions) we live just only method runs! This is not indeed behavior.
@@ -2156,14 +1987,14 @@ $ErrorActionPreference= "Stop";
 			$Handler | Add-Member -Type ScriptMethod -Name unlisten -Force -Value {
 					param($MessageFilter)
 					
-					PsCmdBot_ReplyListener_Remove -MessageFilter $MessageFilter
+					PsCmdBot_ReplyListener_Remove -MessageFilter $MessageFilter -HandlerName $this.NAME
 					
 				};
 				
 			$Handler | Add-Member -Type ScriptMethod -Name getListenerData -Force -Value {
 					param($MessageFilter)
 					
-					PsCmdBot_ReplyListener_GetData -MessageFilter $MessageFilter
+					PsCmdBot_ReplyListener_GetData -MessageFilter $MessageFilter -HandlerName $this.NAME
 				};
 
 			if(!$Handler.COMMANDS){
@@ -2178,8 +2009,9 @@ $ErrorActionPreference= "Stop";
 			#Check doc/DEFAULTAUTHORIZATIONCHECK.md for details!
 			if(!$Handler.IS_AUTHORIZED){
 				$Handler | Add-Member -Type ScriptMethod -Name 'IS_AUTHORIZED' -Value {
-					param($message)
+					param($update)
 					
+					$message = $update.message
 	
 					#Gets current configurations
 					$CurrentConfig = PsCmdBot_CM_GetConfiguration;
@@ -2259,10 +2091,10 @@ $ErrorActionPreference= "Stop";
 			
 			}
 			
-			#Default CHECK_COMMAND method
-			if(!$Handler.CHECK_COMMAND){
-				$Handler | Add-Member -Type ScriptMethod -Name 'CHECK_COMMAND' -Value {
-					param($message = $null, $command = $null)
+			
+			if(!$Handler.FILTER_UPDATE){
+				$Handler | Add-Member -Type ScriptMethod -Name 'FILTER_UPDATE' -Value {
+					param($update = $null, $command = $null)
 					
 					#Gets current command name!
 					if($command){
@@ -2272,7 +2104,7 @@ $ErrorActionPreference= "Stop";
 
 						return $this.SupportedCommandNames -Contains $command;
 					} else {
-						$CurrentCommand = PsCmdBot_DCP_GetCommandName $message;
+						$CurrentCommand = PsCmdBot_DCP_GetCommandName $update.message;
 						return $this.SupportedCommandNames -Contains $CurrentCommand;
 					}
 					
@@ -2321,6 +2153,7 @@ $ErrorActionPreference= "Stop";
 			#Check auhtorizaton on chat!
 			$Handler | Add-Member -Type ScriptMethod -Name _CHAT_AUTHORIZED -Value {
 				param($update)
+				
 
 				$CurrentConfig = PsCmdBot_CM_GetConfiguration;
 
@@ -2332,7 +2165,7 @@ $ErrorActionPreference= "Stop";
 				}
 				
 				[string[]]$SYSTEM_HANDLERS = 'AUXCMDS';
-
+				
 				if(  $SYSTEM_HANDLERS -Contains $this.NAME  ){
 					$GroupsAuthorizeds 	= $CurrentConfig.GLOBAL.SECURITY.SYSTEMHANDLERS_CHATS | ? {$_ -match '^-?\d+$'-or $_ -eq "*"};
 					$UserAuthorizeds	= $CurrentConfig.GLOBAL.SECURITY.SYSTEMHANDLERS_CHATS | ? {$_ -match '^@'};
@@ -2342,7 +2175,7 @@ $ErrorActionPreference= "Stop";
 				}
 
 				if(PsCmdBot_CanLog "DEBUG"){
-					PsCmdBot_Log "	GroupsAuthorized: $GroupsAuthorized. UserAuthorizeds: $UserAuthorizeds" "DEBUG"
+					PsCmdBot_Log "	GroupsAuthorized: $GroupsAuthorized | UserAuthorizeds: $UserAuthorizeds" "DEBUG"
 				}
 
 				$IsFromAuthorizedUser = @($UserAuthorizeds) -Contains ("@"+$update.message.from.username) -and $update.message.chat.type -eq "private"
@@ -2423,48 +2256,7 @@ $ErrorActionPreference= "Stop";
 		PSCmdBot_InitializeHandlers
 	}
 	
-	#Finds the command the current message apply to!
-	Function PsCmdBot_GetMessageHandler {
-		param($Message)
-		
-		PSCmdBot_Log "Determining the message handler!" "VERBOSE"
-		
-		
-		$Stor 			= PSCmdBot_Stor_GetStorage;
-		$HANDLERS		= $Stor.HANDLERS.HANDLERS_LIST;
-		$ListenerEntry = PsCmdBot_ReplyListener_CheckMessage $Message;
-		
-		if($ListenerEntry){
-			$ListenerEntry.Handler.SOURCE = "REPLY_LISTENER";
-			return $ListenerEntry.Handler;
-		}
-		
-		
-		$CommandName = PsCmdBot_DCP_GetCommandName $message
-		
-		if(PsCmdBot_CanLog "VERBOSE"){
-				PSCmdBot_Log "	Command is: $CommandName" "VERBOSE"
-		}
-		
-		$ElegibleHandler = 	$HANDLERS.Values | ? {  
-			
-			if(PsCmdBot_CanLog "VERBOSE"){
-				PSCmdBot_Log "	Checking if handle $($_.NAME) can handle!" "VERBOSE"
-			}
-			
-			$_.CHECK_COMMAND($null,$CommandName)  
-		} | sort-object PRIORITY -Desc | Select-Object -first 1;
-		
-		if($ElegibleHandler){
-			$ElegibleHandler.SOURCE = "COMMAND";
-			return $ElegibleHandler;
-		} else {
-			return $null;
-		}
-		
-		
-		
-	}
+
 		
 	#Triggers handles event
 	Function PsCmdBotI_Handler_FireEvent {
@@ -2557,6 +2349,48 @@ $ErrorActionPreference= "Stop";
 	
 	
 # THE BOT MAIN
+	function Set-CmdBotDir {
+		[CmdletBinding()]
+		param(
+			$dir = "."
+		)
+		
+		$BotDir = ResolvePath $dir;
+		
+		$TemplatePath = ResolvePath "$PsScriptRoot/botdir-template";
+		$TemplateFiles = gci -rec $TemplatePath
+		
+		if(-not(Test-Path $BotDir)){
+			$null = mkdir $BotDir;
+		}
+		
+		function CreatePath {
+			param($file, $CreateScript)
+			
+			$RelativeName 	= $file.FullName.replace($TemplatePath,'');
+			$TargetName 	= $BotDir+$RelativeName;
+			$ParentDir 		= Split-Path $TargetName;
+			
+			if(Test-Path $TargetName){
+				return;
+			}
+			
+			if(-not(Test-Path $ParentDir)){
+				$null = mkdir -force $ParentDir
+			}
+			
+			write-host "Creating $TargetName";
+			Copy-Item $file.FullName $TargetName;
+		}
+		
+		foreach($file in $TemplateFiles){
+			CreatePath $file
+		}
+	
+		
+		
+	}
+
 	Function Start-CmdBot {
 		[CmdLetBinding()]
 		param(
@@ -2644,6 +2478,81 @@ $ErrorActionPreference= "Stop";
 				}
 			};
 			
+			#Check if a message is on list. If is, returns the ListenerEntry associated with it.
+			#Else, returns $null.
+			#Also, manipulates updates the lifetime counter! This must be only way to access a listener entry.
+			Function ReplyListener_GetHandlers {
+				param($update)
+				
+				PSCmdBot_Log "Checking if update contains REPLY_LISTENERS" "VERBOSE"
+				
+				$Message = $update.message
+				
+				$Stor = PsCmdBot_Stor_GetStorage;
+				$ReplyListenerStor = $Stor.REPLY_LISTENER
+				
+				if( $Message.reply_to_message ){
+					
+					$ListenerEntry =  $ReplyListenerStor[$Message.reply_to_message.message_id];
+					$Listeners = $ListenerEntry.Handlers.Values | Sort-Object Order
+					return $Listeners;
+				}
+				
+			}
+	
+			#Finds the command the current message apply to!
+			Function GetHandlersForMessage {
+				param($update)
+				
+				$message = $update.message;
+				
+				PSCmdBot_Log "Determining the message handler!" "VERBOSE"
+				
+				
+				$Stor 			= PSCmdBot_Stor_GetStorage;
+				$HANDLERS		= $Stor.HANDLERS.HANDLERS_LIST;
+				
+				
+				
+				# Check if message has listeners waiting...
+				# Handlers can start a reply listener!
+				# Relpy listener allows handlers receive message that is a reply to previous handler specific message!
+				# That reply message not necessary has format acceptable by handlers, but, the fact is beign listening replt, is sufficinet to handler be invoked!
+				$Listeners = @(ReplyListener_GetHandlers $update)
+				
+				if($Listeners){
+					PSCmdBot_Log "Found listeners: $($Listeners.count)";
+					
+					$ListenHandlers = $Listeners | %{
+						$_.Handler.SOURCE = "REPLY_LISTENER"
+						$_.Handler;
+						
+						PSCmdBot_Log "	Listener: $($_.handler.NAME)"
+					};
+					
+					return $ListenHandlers;
+				}
+				
+				$CommandName = PsCmdBot_DCP_GetCommandName $message
+				
+				if(PsCmdBot_CanLog "VERBOSE"){
+						PSCmdBot_Log "	Command is: $CommandName" "VERBOSE"
+				}
+				
+				$ElegibleHandlers = 	$HANDLERS.Values | ? {  
+					
+					if(PsCmdBot_CanLog "VERBOSE"){
+						PSCmdBot_Log "	Checking if handle $($_.NAME) can handle!" "VERBOSE"
+					}
+					
+					$_.FILTER_UPDATE($null,$CommandName)  
+				} | sort-object PRIORITY -Desc | %{ $_.Source = "COMMAND"; return $_; }
+				
+				return @($ElegibleHandlers)
+			}
+		
+			
+			
 			$FailuresCount = 0;
 			$LastUpdate = 0;
 			while($true){
@@ -2656,15 +2565,16 @@ $ErrorActionPreference= "Stop";
 
 					PSCmdBot_Log "Waiting for telegram updates..." "VERBOSE"
 					$HadUpdates = $false;
-					$resultado = Get-TelegramUpdates -offset $LastUpdate
+					$updates = Get-TelegramUpdates -offset $LastUpdate
 					
 					#For each updates...
-					if($resultado){
+					if($updates){
+						
 						$HadUpdates = $true;
-						PSCmdBot_Log " There are new updates. Starting handling. Count: $($resultado.count)" "DEBUG"
+						PSCmdBot_Log " There are new updates. Starting handling. Count: $($updates.count)" "DEBUG"
 					
-						$resultado | %{
-							$u = $_;
+						foreach($TelegramUpdate in $updates){
+							$u = $TelegramUpdate;
 							$LastUpdate = $u.update_id;
 							
 							PSCmdBot_Log " Processing update $LastUpdate" "VERBOSE"
@@ -2691,65 +2601,73 @@ $ErrorActionPreference= "Stop";
 								
 								#Get the message handler!
 								PSCmdBot_Log "Checking the message handler..." "DEBUG"
-								$HandlerResult	= $null;
-								$MessageHandler = PsCmdBot_GetMessageHandler $m;
-														
-								if(!$MessageHandler){
-									$Ex = PSCmdBot_GetNewException -ID 'PSCMDBOT_NOHANDLER';
-									throw $Ex
-									return;
-								}
-								PSCmdBot_Log "Handler choosed: $($MessageHandler.NAME). Source:$($MessageHandler.SOURCE)" "DEBUG"
-
-								if(!$MessageHandler._CHAT_AUTHORIZED($u)){
-									$HandlerResult = NewHandlerResult $MessageHandler;
-									$HandlerResult.mustReply = $true;
-									$HandlerResult.reply.message = "This chat is not authorized process this command!";
-								} 
-								elseif(!$MessageHandler.IS_AUTHORIZED($m) -and $MessageHandler.SOURCE -eq "COMMAND" -and !$MsgFromSuper ) {
-									$HandlerResult = NewHandlerResult $MessageHandler;
-									$HandlerResult.mustReply = $true;
-									$HandlerResult.reply.message = "Você não está autorizado a executar este comando";
-								}
-								else {
-									#CanRun!
-									PSCmdBot_Log "Invoking handler..." "VERBOSE"
-									try {
-										$HandlerResult = $MessageHandler.HANDLER($u);
-										if(!$HandlerResult){
-											$Ex = PSCmdBot_GetNewException -ID 'HANDLER_NORESULT' -Inner $_;
+								$HandlerList = @(GetHandlersForMessage $TelegramUpdate)
+								$ReplyMessage 	= NewMessageReply
+								$PrevHandlers	= @()
+								
+								if($HandlerList){
+									foreach($MessageHandler in $HandlerList){				
+										if(!$MessageHandler){
+											$Ex = PSCmdBot_GetNewException -ID 'PSCMDBOT_NOHANDLER';
 											throw $Ex
 											return;
 										}
-									} catch {
-										$Ex = PSCmdBot_GetNewException -ID 'HANDLER_FAIL' -Inner $_;
-										throw $Ex
+										PSCmdBot_Log "Handler choosed: $($MessageHandler.NAME). Source:$($MessageHandler.SOURCE)" "DEBUG"
+
+										if(!$MessageHandler._CHAT_AUTHORIZED($u)){
+											PsCmdBot_Log "Handler $($MessageHandler.NAME) not authorized in chat level $($u.message.chat.id)";
+											continue;
+										} 
+										
+										if(!$MessageHandler.IS_AUTHORIZED($u) -and $MessageHandler.SOURCE -eq "COMMAND" -and !$MsgFromSuper ) {
+											PsCmdBot_Log "Handler $($MessageHandler.NAME) not authorized the user level";
+											continue;
+										}
+										
+										#CanRun!
+										PSCmdBot_Log "Invoking handler..." "VERBOSE"
+										$PrevHandlers += $MessageHandler;
+										$ReplyMessage.handlers = $PrevHandlers
+										try {
+											$null = $MessageHandler.HANDLER($ReplyMessage, $u);
+										} catch {
+											throw $_.Exception.InnerException;
+										}
 									}
+								} else {
+									$ReplyMessage.mustReply = $false;
+									PSCmdBot_Log "No handles available for message" "warning";
 								}
 
 								if(PsCmdBot_CanLog "DEBUG"){
-									PSCmdBot_Log "HandlerResult: $(PSCmdBot_Object2HashString $HandlerResult -Expand)" "DEBUG" 
+									PSCmdBot_Log "ReplyMessage: $(PSCmdBot_Object2HashString $ReplyMessage -Expand)" "DEBUG" 
 								}
 
 								#Check if handler wants a reply from bot
-								if($HandlerResult.mustReply){
+								if($ReplyMessage.mustReply){
 									PSCmdBot_Log "Handler request a reply..." "VERBOSE"
 									
-									$ReplyText = $HandlerResult.reply.message;
+									$ReplyText = $ReplyMessage.reply.message;
 								
 									#Replying the message...
 									try {
 										PSCmdBot_Log "	Sending reply..." "VERBOSE"
 										$MessageReplied = Send-TelegramMessage -chat_id $m.chat.id -text $ReplyText -reply_to_message_id $m.message_id
 				
-										if($HandlerResult.reply.script){
+										foreach($ReplyScript in $ReplyMessage.reply.scripts){
 											PsCmdBot_Log "Executing the reply script!" "VERBOSE"
-											& $HandlerResult.reply.script $HandlerResult $MessageReplied
+											& $ReplyScript @{
+												ReplyMessage 	= $ReplyMessage
+												CurrentUpdate	= $Update
+												SentMessage 	= $MessageReplied
+											}
 										}
+										
 										
 										PSCmdBot_PrintTelegramMessage $MessageReplied $PrintMessageScript		
 									} catch {
-										PsCmdBot_Log "Error replying (LastUpdate: $LastUpdate): $_" "PROGRESS";
+										PsCmdBot_Log "Error replying (LastUpdate: $LastUpdate): $_"
+										PsCmdBot_Log $_.ScriptStackTrace;
 									}
 								}
 								
@@ -2820,69 +2738,69 @@ $ErrorActionPreference= "Stop";
 	
 
 
-
+	Export-ModuleMember -Function Start-CmdBot;
+	Export-ModuleMember -Function Set-CmdBotDir;
 	
 # MODULE INITILIZATION
 	PsCmdBot_Initialize
 
 
 # LOGGING INITIALIZATION
-	# Levels defintions:
-	# PROGRESS 	- Error and progress messages. Must be logged as macro activity.
-	# DETAILED 	- General activity  of the bot.
-	# VERBOSE 	- Internals calls to auxiliary functions 
-	# DEBUG		- Internals calls to all functions.
-
-	PsCmdBot_Depends_ImportModule 'XLogging' -force;
-	$PSCmdBotLog = New-LogObject; 
-	$PSCmdBotLog.IgnoreLogFail = $False
-	. (  $PSCmdBotLog | New-InvokeLogProxy -Name "PSCmdBot_Log" )
-	$PSCmdBotLog.LogLevel = "DETAILED"
-	$PSCmdBotLog.LogTo	  = @("#",$null) #Loggin to two targets: A file and the screen, (the # means use write-host).
-	$PSCmdBotLog.UseDLD = $false #Not use dynamic discovery of the log level.
-	PSCmdBot_Log_SetDefaultLevel "PROGRESS"
 
 	Function PsCmdBot_CanLog {
-		param($Level)
+		return $true;
+	}
+	
+	function PSCmdBot_Log {
+		param($msg, $level = "host")
 		
-		return $PSCmdBotLog | Test-LogLevel $Level
+		$Level = $Level.toLower();		
+		
+		if($Level -notin ('debug','verbose','warning')){
+			$Level = "host"
+		}
+		
+		if($Level -eq "debug"){
+			$Level = "verbose";
+		}
+		
+		$Cmd = "write-" + $Level.toLower();
+		
+		& $cmd $msg;
 	}
 
 	#Adds log change configuration subcription
 	PsCmdBot_CM_AddSubscription "LOGGING" {
 		param($Changed)
 		
-		PSCmdBot_Log_SetDefaultLevel "PROGRESS";
+		##Check if log was changed!
+		#if(!$Changed.Contains('GLOBAL')){
+		#	return;
+		#}
+		#
+		#if(!$Changed.GLOBAL.Contains('LOGGING')){
+		#	return;
+		#}
 		
-		#Check if log was changed!
-		if(!$Changed.Contains('GLOBAL')){
-			return;
-		}
+		#if($Changed.GLOBAL.LOGGING.Contains('LEVEL')){
+		#	$NewLevel = $Changed.GLOBAL.LOGGING.LEVEL;
+		#	PSCmdBot_Log "Logging level will change to $NewLevel "
+		#	$PSCmdBotLog.LogLevel = $NewLevel;
+		#	PSCmdBot_Log "Logging level changed due to configuration file reload. Current: $NewLevel"
+		#}
 		
-		if(!$Changed.GLOBAL.Contains('LOGGING')){
-			return;
-		}
-		
-		if($Changed.GLOBAL.LOGGING.Contains('LEVEL')){
-			$NewLevel = $Changed.GLOBAL.LOGGING.LEVEL;
-			PSCmdBot_Log "Logging level will change to $NewLevel "
-			$PSCmdBotLog.LogLevel = $NewLevel;
-			PSCmdBot_Log "Logging level changed due to configuration file reload. Current: $NewLevel"
-		}
-		
-		if($Changed.GLOBAL.LOGGING.Contains('FILE')){
-			$NewFile = $Changed.GLOBAL.LOGGING.FILE;
-			PSCmdBot_Log "Log file will be change to $NewFile";
-			
-			if($Changed.GLOBAL.LOGGING.FILE){
-				$PSCmdBotLog.LogTo[1] = $Changed.GLOBAL.LOGGING.FILE.toString();
-			} else {
-				$PSCmdBotLog.LogTo[1] = $null;
-			}
-			
-			PSCmdBot_Log "Logging file changed due to configuration file reload. New file: $NewFile"
-		}
-
+		#if($Changed.GLOBAL.LOGGING.Contains('FILE')){
+		#	$NewFile = $Changed.GLOBAL.LOGGING.FILE;
+		#	PSCmdBot_Log "Log file will be change to $NewFile";
+		#	
+		#	if($Changed.GLOBAL.LOGGING.FILE){
+		#		$PSCmdBotLog.LogTo[1] = $Changed.GLOBAL.LOGGING.FILE.toString();
+		#	} else {
+		#		$PSCmdBotLog.LogTo[1] = $null;
+		#	}
+		#	
+		#	PSCmdBot_Log "Logging file changed due to configuration file reload. New file: $NewFile"
+		#}
 		
 	}
 

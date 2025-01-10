@@ -70,6 +70,8 @@
 		#Security options!
 		SECURITY = @{
 			#Controls chat_id where the bot can process thirdy party handlers!
+			#Must specify array of users (or single user), in format @username
+			#For groups, must be the ids, starting with - (ex.: -1223456789)
 			USERHANDLERS_CHATS = $null
 
 			#This must be used for debugging purposes only. Dont enable in production.

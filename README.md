@@ -1,72 +1,193 @@
-# About PsCmdBot
+# PsCmdBot
 
-PsCmdBot is a powershell module that provides a rich platform to allow a telegram bot execute many tasks, like connecting to databases and executing SQL commands, running powershell scripts, interaction with operating system, etc.
+PSCmdBot é um módulo powershell que provê um jeito bem fácil de integrar bots do Telegram no seu script.  
+Você pode enviar e responer mensagens usando scripts powershell!
+E há uma série de configurações que ajudam a controlar diversos aspectos, incluindo a segurança desses scripts e mensagens!
 
-The PsCmdBot provides a powerful engine that handles many operation, provies integration with telegram, handles security, generate useful logging for debugging, manages configurations files, etc.
+## Como começar 
 
-Also, the main power os PsCmdBot is allow a form of "plugins" (we calls it "message handlers") be added to it. When you start a PsCmdBot, it do not many useful things... It provides just a set of basics commands to obtain information about chat and configure your bot. 
+Abaixo um passo para começar a receber e responder mensagens:
 
-But, you can search for a message handler on internet, use a message handler that we provide, or, write you own.
+### Obtenha um token 
 
-## The basic flow
+Para obter o token, você deve iniciar um conversa com o usuário [@BotFather](https://t.me/botfather).  
+Envie o comando `/newbot` e siga as instruções.
+Se você já tem um token previamente criado, é só usar ele.
 
-* You create a telegram bot and get a token (talking with @botfather)
-* You download the PsCmdBot module
-* You start a powershell session and import the module:
-```powershell
-import-module PsCmdBot -force;
+### Crie o BotDir (WorkingDir)
+
+O BotDir é o diretório one todas as configurações e scripts do seu bot ficarão.  
+Você pode criar manualmente, mas recomendo usar o comando `Set-CmdBotDir`.  
+É só invocar ele passando um caminho. Se for um diretório existente, ele irá validar e criar dentro.  
+Se não existir, ele cria. Você pode especificar diretórios usando caminhos relativos. Por exemplo, `Set-CmdBotDir .`, cria no diretórioa atual.
+
+### Crie um Message Handler
+
+Uma vez que você criou o BotDir, você deve criar um arquivo com a extensão `.msghandler.ps1` no diretório `BotDir\msghandlers`.  
+O nome que você especifica (antes do .msghandle), é o nome do seu handler, e este nome você vai referenciar na configuração.
+
+Este é o arquivo que vai ser invocado quando o usuário enviar mensagens.  
+Aqui está um exemplo de um Message Handler que responde qualquer mensagem com a quantidade de caracteres da mensagem atual.
+
+
+```powershell 
+# msghandle\echo.msghandler.ps1
+# Nome do handler: echo
+@{
+
+	HANDLER = {
+		param($res, $update)
+		
+		$TotalChars = $update.text.length;
+		$res.mustReply = $true;
+		$res.reply.message = "Caracteres: $TotalChars";
+	}
+
+}
 ```
-* You create a directory (the working directory of your bot). Example: C:\MyBot
-* You can define a configuration file (must be named .config.ps1 in working directory): C:\MyBot\.config.ps1
-* You set security options in configuration file
-* You can add additional message handlers in you working directory: Just put the *.msghandler.ps1 in C:\MyBot\msghandlers
-* You start you bot:
-```powershell
+
+
+### Defina as configurações de segurança 
+
+Agora que você definiu o handler, você configurar o seu bot e autorizar usuários.  
+Você faz no arquivo `config.ps1` que fica na raiz do seu Botdir.
+Aqui está um exemplo:
+
+```
+@{
+	GLOBAL = @{
+		SECURITY = @{
+			#Especifie um ou mais usuarios!
+			#Para autorizar grupos, coloque o id do grupo (adicone o bot no grupo e use o comando /chatinfo para obter o id.
+			USERHANDLERS_CHATS = @('@telegramusername')
+		}
+	}
+	
+	HANDLERS = @{
+		echo = {
+			COMMANDS = @{
+				'echo' = @{
+					AUTHORIZED_USERS = '*'
+				}
+			}
+		}
+	}
+}
+```
+
+
+### Execute!
+
+Agora que você tem tudo configurado, incie o seu bot com o comando Start-CmdBot:
+
+```
+# especifique o token obtido com o botfather 
+# Especifique o working directory (ou pode omitir se estiver no atual)
 Start-CmdBot -token 'MyBotToken' -WorkingDirectory C:\MyBot
 ```
-* Now, your bot is able to process a lot of commands and response them!
-
-### Macro Flow
-
-![Basic Flow](doc/images/PsCmdBot_BasicFlow.png)
 
 
+## Fluxo 
 
-## The Message Handlers
+Aqui está um diagrama mostrando o fluxo de mensagens entre o Telegram e o PsCmdBot
 
-Message handlers are the way your extended the power of your bot.
-It are simple powershell scripts that define many information about the it, and, of course,  the code it will execute whenever a command for it is sent to your bot.
+```mermaid 
+sequenceDiagram
 
-If you are a IT Administrator that want allow manage your infraescruture via telegram bot, you can search for message handlers that do actions of your interest. Its important note that message handlers are just code a another team or people write. You must get trusth code and, if possible, review the code to guarantee that is not mailicious.
+    box Telegram Chat UI
+        participant User
+        participant TelegramApp
+    end
 
-If you are a message handler writer, then you can use documentation and PsCmdBot features to help you write the code for you want.  The PsCmdbot engine handles many things. It provides default actions and features. Most of them, you can customize to acieve a maximum of customization to your solution. Following items are some features that PsCmdBot engines proved by default:
+    box Telegram Server
+        participant TelegramAPI
+    end 
+
+    box Your Server (powershell session)
+        participant Start-CmdBot
+        participant MessageHandler
+    end
 
 
-### Message Handlers EXamples
+    User->>TelegramApp:mensagem
+    TelegramApp->>TelegramAPI:update
+
+
+    Start-CmdBot->>TelegramAPI:/getUpdates
+    Start-CmdBot->>Start-CmdBot:check
+    Start-CmdBot->>MessageHandler:update
+    
+    MessageHandler->>Start-CmdBot:ReplyObject
+
+    Start-CmdBot->>Start-CmdBot:checks
+
+    Start-CmdBot->>TelegramAPI:ReplyMessage
+
+    TelegramAPI->>TelegramApp:reply
+    TelegramApp->>User:reply
+```
+
+## BotDir 
+
+BotDir (também chaamdo de WorkingDir), é o diretório do seu bot, onde você deve armazenar configurações e scripts, e onde logs serão gerados.  
+Você pode manualmente criar um ou usar o comando `Set-CmdBotDir`. Este cmdlet irá inicializar um diretório com todos os arquivos e estrutura necessária.
+
+## Configuração 
+
+O arquivo mais importante do seu BotDir é um chamado `config.ps1`. Este o `User Config File`, e é o arquivo que controla todos os aspectos do seu bot, incluindo a segurança. Este arquivo é um script powershell que deve retornar uma hashtable, com o seguinte formato:
+
+```powershell 
+@{
+	CONFIG1 = VALUE
+	
+	CONFIG2 = @{
+		CONFIG2_1 = value
+		CONFIG2_2 = @{
+		
+			}
+	}
+}
+```
+
+Os valores das keys vão desde simples strings até tipos complexos, como hashtables ou scriptblock.
+Para saber todas as opções possíveis, consulte o [DEFAULT CONFIG FILE](/default.config.ps1).  
+
+As principais subkeys são GLOBAL (configurações válias para todos os handlers) e HANDLERS (configurações de handlers específicos).
+O PsCmdBot identifica a alteração em runtime do arquivo, portanto você pode alterar enquanto ele está executando e as configurações valerão.  
+Certas configurações podem ser aplicadas apens no start. Para saber quais são, consulte o default config file.
+
+## Message Handlers
+
+Message Handlers são scripts criados para processar mensagens recebidas.
+Sempre que uma nova mensagem chega, o PsCmdBot identifica quais handlers podem processar aquela mensagem.  
+
+Então, um a um, cada handler vai processar a mensagem, como se fosse em um pipeline.
+A ordem em que os handlers são processados é defindo por configuração no arquivo de configuração do bot.
+
+A ideia é que existam pessoas que escrevam handlers para que outras pessoas possam usar, criando um ecossistema de reaproveitamento, com as mais variadas funções.
+
+### Doc e exemplos
+
+Para criar um handler, você deve colocar um arquivo com a extensão `.msghandle.ps1` no diretório `BotDir\msghandlers\`.
+O jeito mais rápido de criar um handler é através dos [exemplos](messagehandlers/examples).  
+Para conhecer as opções avançadas, veja o arquivo de [layout.ps1](messagehandlers/layout.ps1), que contém toda a estrutura de como defniir um handler.
 
 The [documentation of message handlers](doc/MESSAGEHANDLERS.md) contains lot of information for developing your handler.
-Also, check the [message handlers examples](messagehandlers/examples) for more ideas.
+Also, check the [message handlers examples] for more ideas.
 
 
-## Main Features
+## Outras features 
 
-* **A default command parse (DCP)**
-With DCP, you dont need worry about write a interpreter to your bot commands.
-The DCP takes the command message sent by user in telegram, and extract parameters, strings , arrays etc. It provides the values in native powershell objects!
-Read more in [DCP documentation](doc/DCP.md)
+O PsCmdBot tem algumas outras features e conceitos, que vale um breve resumo:
 
-* **A default authorization check**
-Security is a important topic inside PsCmdBot engine. Because you allowing the any user in the World sent commands to your bot, we provide a basic security mechanism. By default, only explicity authorized users can execute any command of thridy party handlers. You authroized users using the configuration file in working directory.
-Also, the PsCmdBot engine provides another configuratons options to control chats that can send commands, super admins, etc.
+* **default command parse (DCP)**
+O PsCmdBot funciona interpretando mensagem como comandos.  
+Para isso funcionar bem, criamos uma sintaxe chamada DCP (default command parse). 
+Ele é um pequeno interpretador de mensagens e suporta uma série de recursos, como parâmetros, strings, etc.
 
-* **Configurations Files**
-The PsCmdBot engine provies a rich and powerfull model of configuration. If you are a handler write, you can define default options that your message handler will need. The user, them, can change this values using a configuration file in working directory or via runtime. Configuration can be changed in runtime, allowing bot change behavior in any time.
-Configuratons are powershell script that returns a hashtable. This facilitates user read of configuration and implementation of it.
-Read more in [configuration file documentation](doc/CONFIGURATIONFILE.md)
-
-
-* **Logging**
-THe PsCmdBot uses the [XLogging](https://github.com/rrg92/XLogging) powershell modules. That its, it can logs messages to files, console, etc. You can control many logging options in configuration files.
+* **Autorização**
+Segurança é um assunto importante no PsCmdBot. Como qualquer usuário do mundo pode enviar comandos pro seu bot, há alguns mecanismos de segurança básica.  
+Por padrão, somente usuário autorizados explicitamente, através do seu nome de usuário, podem enviar mensagens que serão processadas por Message Handlers de terceiro. Você autoriza esses usuários no arquivo de configuração do bot, localizado no BotDir. Há vários recursos que podem ser configurados que chegam até no nóivel de comando. Isso dá total controle para o admin.
 
 
 

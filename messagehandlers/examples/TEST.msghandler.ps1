@@ -18,10 +18,10 @@
 
 
     HANDLER = {
-        $res = NewHandlerResult $this;
+		param($res, $update)
+
         $res.mustReply = $true;
         $res.reply.message = "Success! $(OnStartTest)";
-        return $res;
     }
 
 }
